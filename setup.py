@@ -135,6 +135,10 @@ ext_modules.append(
             
             "csrc/ops/rms_norm.cpp",
             "csrc/ops/rms_norm_cuda.cu",
+
+            "csrc/ops/fma.cpp",
+            "csrc/ops/fma_cuda.cu",
+            
         ],
           extra_compile_args={
             # add c compile flags
@@ -153,7 +157,7 @@ ext_modules.append(
                     "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
-                    # "--use_fast_math",
+                    "--use_fast_math",
 
                 ]
                 + generator_flag
