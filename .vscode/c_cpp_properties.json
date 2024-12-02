@@ -1,0 +1,20 @@
+{
+    "env": {
+        "cutlassInclude": [
+            "${workspaceFolder}/third_party/cutlass/include",
+            "${workspaceFolder}/third_party/cutlass/tools/util/include",
+            "${workspaceFolder}/third_party/cutlass/tools/library/include"
+        ]
+    },
+    "configurations": [
+        {
+            "name": "cuda",
+            "compilerPath": "/usr/local/cuda/bin/nvcc",
+            "intelliSenseMode": "linux-gcc-x64",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "includePath": ["${cutlassInclude}", "${workspaceFolder}/csrc"]
+        }
+    ],
+    "version": 4
+}
