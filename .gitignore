@@ -163,3 +163,4 @@ cython_debug/
 
 third_party/
 debug/
+*.ipynb
