@@ -317,10 +317,7 @@ __global__ void flash_attention_v2_cutlass_mask_kernel(
     const int bs_head_offset_v = base_id * kHeadDim * V_N;
 
     const int MASK_N = BatchMask[base_id / (int)HEADS];    
-    if (tidx == 0 && (base_id == 0 || base_id == (int)HEADS) && m_block == 0){
-        print("BATCH N: "); print(MASK_N);
-        print("\n"); 
-    }
+   
     Tensor Q = make_tensor(
         make_gmem_ptr(Q_ptr + bs_head_offset_q),
         make_shape(M, Int<kHeadDim>{}),
