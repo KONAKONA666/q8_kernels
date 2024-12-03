@@ -9,6 +9,8 @@
         "string_view": "cpp",
         "initializer_list": "cpp",
         "utility": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "cstdint": "cpp",
+        "system_error": "cpp"
     }
 }

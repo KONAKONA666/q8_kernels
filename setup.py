@@ -173,6 +173,48 @@ ext_modules.append(
     )
 )
 
+
+ext_modules.append(
+    CUDAExtension(
+        # package name for import
+        name="q8_matmul.flash_attention._C",
+        sources=[
+            "csrc/flash_attention/flash_attention.cpp",
+            "csrc/flash_attention/flash_attention_cuda.cu",
+            "csrc/flash_attention/flash_attention_cuda_mask.cu",
+        ],
+          extra_compile_args={
+            # add c compile flags
+            "cxx": ["-O3", "-std=c++17"] + generator_flag,
+            # add nvcc compile flags
+            "nvcc": [
+                    "-O3",
+                    "-std=c++17",
+                    "-U__CUDA_NO_HALF_OPERATORS__",
+                    "--use_fast_math",
+                    "-lineinfo",
+                    "--ptxas-options=-v",
+                    "--ptxas-options=-O2",
+                    "-U__CUDA_NO_HALF_OPERATORS__",
+                    "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "-U__CUDA_NO_HALF2_OPERATORS__",
+                    "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+                    "--expt-relaxed-constexpr",
+                    "--expt-extended-lambda",
+                ]
+                + generator_flag
+                + cc_flag,
+        },
+        include_dirs=[
+            Path(this_dir) / "csrc"/"flash_attention",
+            Path(this_dir) / "third_party/cutlass/include",
+            Path(this_dir) / "third_party/cutlass/tools/utils/include" ,
+            Path(this_dir) / "third_party/cutlass/examples/common" ,
+            # Path(this_dir) / "some" / "thing" / "more",
+        ],
+    )
+)
+
 setup(
     name=PACKAGE_NAME,
     packages=find_packages(
