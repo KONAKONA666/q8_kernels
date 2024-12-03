@@ -138,7 +138,9 @@ ext_modules.append(
 
             "csrc/ops/fma.cpp",
             "csrc/ops/fma_cuda.cu",
-            
+
+            "csrc/fast_hadamard/fast_hadamard_transform.cpp",
+            "csrc/fast_hadamard/fast_hadamard_transform_cuda.cu"
         ],
           extra_compile_args={
             # add c compile flags
@@ -165,6 +167,8 @@ ext_modules.append(
         },
         include_dirs=[
             Path(this_dir) / "csrc"/"ops",
+            Path(this_dir) / "csrc"/"fast_hadamard",
+            
             Path(this_dir) / "third_party/cutlass/include",
             Path(this_dir) / "third_party/cutlass/tools/utils/include" ,
             Path(this_dir) / "third_party/cutlass/examples/common" ,
