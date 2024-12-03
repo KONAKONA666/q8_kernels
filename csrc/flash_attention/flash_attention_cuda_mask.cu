@@ -553,6 +553,7 @@ void flash_attention_cuda_mask(void* Q_ptr, void* K_ptr, void* V_ptr, int* Batch
                 cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
             }
             kernel<<<grid, block, smem_size, stream>>>((float_e4m3_t*)Q_ptr, (float_e4m3_t*)K_ptr, (float_e4m3_t*)V_ptr, BatchMask, (float_e4m3_t*)O_ptr, BATCH, NUM_HEADS, M, N, softmax_scale);
+            // C10_CUDA_KERNEL_LAUNCH_CHECK();
         } else {
             auto kernel = &flash_attention_v2_cutlass_mask_kernel<false>;
             int smem_size = int(N_BLOCK*64*2 + M_BLOCK*64);
@@ -560,6 +561,7 @@ void flash_attention_cuda_mask(void* Q_ptr, void* K_ptr, void* V_ptr, int* Batch
                 cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
             }
             kernel<<<grid, block, smem_size, stream>>>((float_e4m3_t*)Q_ptr, (float_e4m3_t*)K_ptr, (float_e4m3_t*)V_ptr, BatchMask, (float_e4m3_t*)O_ptr, BATCH, NUM_HEADS, M, N, softmax_scale);
+            // C10_CUDA_KERNEL_LAUNCH_CHECK();
         }
         
 }
