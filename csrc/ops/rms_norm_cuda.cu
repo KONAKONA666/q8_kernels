@@ -9,13 +9,14 @@
 
 #include "rms_norm.h"
 
-template<int kNThreads_, int dim, typename input_t_>
+template<int kNThreads_, int dim, bool norm_affine_, typename input_t_>
 struct rmsnorm_kernel_traits {
 
     using input_t = input_t_;
     using weights_t = float;
     using vec_t = uint4;
     
+    static constexpr bool norm_affine = norm_affine_;
     static constexpr int kNThreads = kNThreads_;
     static constexpr int kNBytes_input = sizeof(input_t);
     static_assert(kNBytes_input == 1 || kNBytes_input == 2 || kNBytes_input == 4);
@@ -94,6 +95,7 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
     constexpr int kWarpSize = std::min(kNThreads, 32);
     constexpr int kNWarps = kNThreads / kWarpSize;
     constexpr int ThreadElems = Ktraits::ThreadElems;
+    constexpr bool norm_affine = Ktraits::norm_affine;
 
     using input_t = typename Ktraits::input_t;
     using weights_t = typename Ktraits::weights_t;
@@ -107,7 +109,9 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
     const int warp_id = threadIdx.x / 32;
 
     input_t *x = reinterpret_cast<input_t *>(params.x_ptr) + batch_id * params.x_batch_stride;
-    weights_t *weights = reinterpret_cast<weights_t*>(params.weights_ptr);
+    
+    weights_t *weights = norm_affine ? reinterpret_cast<weights_t*>(params.weights_ptr) : nullptr;
+
     output_t *out = reinterpret_cast<output_t *>(params.out_ptr) + batch_id * params.out_batch_stride;
 
 
@@ -141,21 +145,26 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
     __syncthreads();
     
     norm = rsqrtf(norm);
-
-    load_input<ThreadElems, weights_t, vec_t>(weights, weights_vals);
+    if constexpr (norm_affine){
+        load_input<ThreadElems, weights_t, vec_t>(weights, weights_vals);
+    }
     #pragma unroll
     for (size_t i = 0; i < ThreadElems; i++)
     {
-        x_vals[i] = (x_vals[i] * norm) * weights_vals[i];
+        if constexpr (norm_affine){
+            x_vals[i] = (x_vals[i] * norm) * weights_vals[i];
+        } else {
+            x_vals[i] = (x_vals[i] * norm);
+        }
     }
     
     store_output<ThreadElems, vec_t, input_t>(out, x_vals);
 }
 
 
-template<int kNThreads, int dim, typename input_t>
+template<int kNThreads, int dim, bool norm_affine, typename input_t>
 void rms_norm_launch(RMSNormsParamsBase &params, cudaStream_t stream) {
-    using Ktraits = rmsnorm_kernel_traits<kNThreads, dim, input_t>;
+    using Ktraits = rmsnorm_kernel_traits<kNThreads, dim, norm_affine, input_t>;
     
     dim3 grid(params.batch);
     auto kernel = &rms_norm_kernel<Ktraits>;
@@ -167,13 +176,14 @@ void rms_norm_launch(RMSNormsParamsBase &params, cudaStream_t stream) {
 }
 
 
-template<typename input_t>
+template<bool norm_affine, typename input_t>
 void  rms_norm_cuda(RMSNormsParamsBase &params, cudaStream_t stream) {
     if (params.dim == 2048) {
-        rms_norm_launch<128, 2048, input_t>(params, stream);
+        rms_norm_launch<128, 2048, norm_affine, input_t>(params, stream);
     } else if(params.dim == 8192){
-        rms_norm_launch<512, 8192, input_t>(params, stream);  
+        rms_norm_launch<512, 8192, norm_affine, input_t>(params, stream);  
     }
 }
 
-template void rms_norm_cuda<at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
+template void rms_norm_cuda<true, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
+template void rms_norm_cuda<false, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
