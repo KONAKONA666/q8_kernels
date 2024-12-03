@@ -5,8 +5,6 @@
 
 #include <cute/layout.hpp>
 
-#include <cute/numeric/integer_subbyte.hpp>
-
 #include <cutlass/numeric_types.h>
 
 namespace cute

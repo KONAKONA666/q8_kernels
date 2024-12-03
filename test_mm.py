@@ -2,8 +2,10 @@ import os
 import torch
 import math
 
-from q8_gemm import q8_mm
-from fast_hadamard_transform import hadamard_transform
+from q8_matmul.gemm._C import q8_mm
+from q8_matmul.quantizer._C import tokenwise_quant
+from q8_matmul.ops._C import rms_norm, fma_8bit
+from q8_matmul.ops._C import fast_hadamard_transform
 
 from safetensors.torch import load_file
 
@@ -23,7 +25,7 @@ def diff_quantiles(a, b):
 
 def hadamard_quant(x):
     k = x.shape[-1]
-    x_hadamard = hadamard_transform(x, scale=1/math.sqrt(k))
+    x_hadamard = fast_hadamard_transform(x, 1/math.sqrt(k))
     x_abs_max_hadamard = x_hadamard.float().abs().max(-1, False).values
     x_scale_hadamard = x_abs_max_hadamard/127.0
     x_q8_hadamard = (x_hadamard.float() / x_scale_hadamard[..., None]).round().to(torch.int8)
@@ -37,13 +39,13 @@ def quant(x):
 
 
 l_idx = 3
-x = torch.load(f"/data/LTXVideo/acts/ffn/hs-{l_idx}.pt", map_location="cuda")[:, :, :]
-model_weights = load_file("/data/ltx_weights/unet/unet_diffusion_pytorch_model.safetensors", device="cpu")
+x = torch.load(f"../LTXVideo/acts/ffn/hs-{l_idx}.pt", map_location="cuda")[:, :, :]
+model_weights = load_file("../ltx_weights/unet/unet_diffusion_pytorch_model.safetensors", device="cpu")
 w = model_weights[f"transformer_blocks.{l_idx}.ff.net.0.proj.weight"].cuda()
 
 k = x.shape[-1]
-x_hadamard = hadamard_transform(x.to(torch.float8_e4m3fn), scale=1/math.sqrt(k))
-w_hadamard = hadamard_transform(w.to(torch.float8_e4m3fn), scale=1/math.sqrt(k))
+x_hadamard = fast_hadamard_transform(x.to(torch.float8_e4m3fn), 1/math.sqrt(k))
+w_hadamard = fast_hadamard_transform(w.to(torch.float8_e4m3fn), 1/math.sqrt(k))
 
 x_quant_h, x_scales_h = hadamard_quant(x.to(torch.float8_e4m3fn))
 w_quant_h, w_scales_h = hadamard_quant(w.to(torch.float8_e4m3fn))

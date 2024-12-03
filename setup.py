@@ -45,8 +45,9 @@ ext_modules.append(
         name="q8_matmul.gemm._C",
         sources=[
             "csrc/gemm/q8_gemm_api.cpp",
-            "csrc/gemm/q8_matmul.cu",
             "csrc/gemm/q8_matmul_bias.cu",
+            "csrc/gemm/q8_matmul.cu",
+           
         ],
         extra_compile_args={
             # add c compile flags

@@ -528,10 +528,9 @@ void run_q8_gemm_bias(int8_t *A, int8_t *B,  float* bias, void *C, float* A_scal
     int shm_size = kShmSize;
 
     bool is_even = M % BM == 0;
-    BOOL_SWITCH(fuse_gelu, fuse_gelu_, [&]{
-        BOOL_SWITCH(is_even, Is_Even, [&]{
-            BATCH_SWITCH(BA, BB, [&]{
-                auto kernel = &gemm_q8_kernel_bias<Is_Even, fuse_gelu_, BM, BN, BK, BA_, BB_, KStages, MMA,
+    BOOL_SWITCH(fuse_gelu, fuse_gelu_, 
+        BOOL_SWITCH(is_even, Is_Even, 
+            BATCH_SWITCH(BA, BB, auto kernel = &gemm_q8_kernel_bias<Is_Even, fuse_gelu_, BM, BN, BK, BA_, BB_, KStages, MMA,
                                                 G2SCopyA, G2SCopyB, 
                                                 SmemLayoutA, SmemLayoutB, SmemLayoutC, 
 
@@ -549,10 +548,9 @@ void run_q8_gemm_bias(int8_t *A, int8_t *B,  float* bias, void *C, float* A_scal
                                                 R2SCopyAtomC, S2GCopyAtomC, S2GCopyC>;
                 cudaFuncSetAttribute(
                                 kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shm_size);
-                kernel<<<grid, block, shm_size>>>((int8_t*)A, (int8_t*)B, bias, A_scales, B_scales, (float_e4m3_t*)C, M, N, K, BATCH);
-            });
-        });
-    });
+                kernel<<<grid, block, shm_size>>>((int8_t*)A, (int8_t*)B, bias, A_scales, B_scales, (float_e4m3_t*)C, M, N, K, BATCH););
+        );
+    );
 }
 
 
