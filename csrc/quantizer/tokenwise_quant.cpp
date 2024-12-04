@@ -60,7 +60,8 @@ void set_quantizer_params(QuantizerParamsBase &params,
 }
 
 std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x) {
-    printf(toString(x.scalar_type()));
+
+    TORCH_CHECK(x.is_cuda());
     const auto shapes_og = x.sizes();
     
     const int dim_og = x.size(-1);
