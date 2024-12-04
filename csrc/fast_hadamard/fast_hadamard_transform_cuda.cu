@@ -15,9 +15,11 @@
 #include "static_switch.h"
 
 
-template<int kNThreads_, int kLogN_, typename input_t_>
+template<int kNThreads_, int kLogN_, typename input_t_, typename output_t_>
 struct fast_hadamard_transform_kernel_traits {
     using input_t = input_t_;
+    using output_t = output_t_;
+
     static constexpr int kNThreads = kNThreads_;
     static constexpr int kLogN = kLogN_;
     static constexpr int N = 1 << kLogN;
@@ -46,6 +48,7 @@ void fast_hadamard_transform_kernel(HadamardParamsBase params) {
     constexpr int kNExchangeRounds = Ktraits::kNExchangeRounds;
     constexpr int kNChunks = Ktraits::kNChunks;
     using input_t = typename Ktraits::input_t;
+    using output_t = typename Ktraits::output_t;
     using vec_t = typename Ktraits::vec_t;
 
     constexpr int kLogNElts = cilog2(Ktraits::kNElts);
@@ -71,7 +74,7 @@ void fast_hadamard_transform_kernel(HadamardParamsBase params) {
 
     const int batch_id = blockIdx.x;
     input_t *x = reinterpret_cast<input_t *>(params.x_ptr) + batch_id * params.x_batch_stride;
-    input_t *out = reinterpret_cast<input_t *>(params.out_ptr) + batch_id * params.out_batch_stride;
+    output_t *out = reinterpret_cast<output_t *>(params.out_ptr) + batch_id * params.out_batch_stride;
 
     float x_vals[kNChunks][kNElts];
     load_input<kNChunks, kNElts, input_t>(x, x_vals, params.dim);
@@ -104,12 +107,12 @@ void fast_hadamard_transform_kernel(HadamardParamsBase params) {
         }
     }
 
-    store_output<kNChunks, kNElts, input_t>(out, x_vals, params.dim, params.scale);
+    store_output<kNChunks, kNElts, output_t>(out, x_vals, params.dim, params.scale);
 }
 
-template<int kNThreads, int kLogN, typename input_t>
+template<int kNThreads, int kLogN, typename input_t, typename output_t>
 void fast_hadamard_transform_launch(HadamardParamsBase &params, cudaStream_t stream) {
-    using Ktraits = fast_hadamard_transform_kernel_traits<kNThreads, kLogN, input_t>;
+    using Ktraits = fast_hadamard_transform_kernel_traits<kNThreads, kLogN, input_t, output_t>;
     constexpr int kSmemSize = Ktraits::kSmemSize;
     dim3 grid(params.batch);
     auto kernel = &fast_hadamard_transform_kernel<Ktraits>;
@@ -121,39 +124,40 @@ void fast_hadamard_transform_launch(HadamardParamsBase &params, cudaStream_t str
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
-template<typename input_t>
+template<typename input_t, typename output_t>
 void fast_hadamard_transform_cuda(HadamardParamsBase &params, cudaStream_t stream) {
     if (params.log_N == 3) {
-        fast_hadamard_transform_launch<1, 3, input_t>(params, stream);
+        fast_hadamard_transform_launch<1, 3, input_t, output_t>(params, stream);
     } else if (params.log_N == 4) {
-        fast_hadamard_transform_launch<2, 4, input_t>(params, stream);
+        fast_hadamard_transform_launch<2, 4, input_t, output_t>(params, stream);
     } else if (params.log_N == 5) {
-        fast_hadamard_transform_launch<4, 5, input_t>(params, stream);
+        fast_hadamard_transform_launch<4, 5, input_t, output_t>(params, stream);
     } else if (params.log_N == 6) {
-        fast_hadamard_transform_launch<8, 6, input_t>(params, stream);
+        fast_hadamard_transform_launch<8, 6, input_t, output_t>(params, stream);
     } else if (params.log_N == 7) {
-        fast_hadamard_transform_launch<16, 7, input_t>(params, stream);
+        fast_hadamard_transform_launch<16, 7, input_t, output_t>(params, stream);
     } else if (params.log_N == 8) {
-        fast_hadamard_transform_launch<32, 8, input_t>(params, stream);
+        fast_hadamard_transform_launch<32, 8, input_t, output_t>(params, stream);
     } else if (params.log_N == 9) {
-        fast_hadamard_transform_launch<32, 9, input_t>(params, stream);
+        fast_hadamard_transform_launch<32, 9, input_t, output_t>(params, stream);
     } else if (params.log_N == 10) {
-        fast_hadamard_transform_launch<128, 10, input_t>(params, stream);
+        fast_hadamard_transform_launch<128, 10, input_t, output_t>(params, stream);
     } else if (params.log_N == 11) {
-        fast_hadamard_transform_launch<256, 11, input_t>(params, stream);
+        fast_hadamard_transform_launch<256, 11, input_t, output_t>(params, stream);
     } else if (params.log_N == 12) {
-        fast_hadamard_transform_launch<256, 12, input_t>(params, stream);
+        fast_hadamard_transform_launch<256, 12, input_t, output_t>(params, stream);
     } else if (params.log_N == 13) {
-        fast_hadamard_transform_launch<256, 13, input_t>(params, stream);
+        fast_hadamard_transform_launch<256, 13, input_t, output_t>(params, stream);
     } else if (params.log_N == 14) {
-        fast_hadamard_transform_launch<256, 14, input_t>(params, stream);
+        fast_hadamard_transform_launch<256, 14, input_t, output_t>(params, stream);
     } else if (params.log_N == 15) {
-        fast_hadamard_transform_launch<256, 15, input_t>(params, stream);
+        fast_hadamard_transform_launch<256, 15, input_t, output_t>(params, stream);
     }
 }
 
 
-template void fast_hadamard_transform_cuda<float>(HadamardParamsBase &params, cudaStream_t stream);
-template void fast_hadamard_transform_cuda<at::Half>(HadamardParamsBase &params, cudaStream_t stream);
-template void fast_hadamard_transform_cuda<at::BFloat16>(HadamardParamsBase &params, cudaStream_t stream);
-template void fast_hadamard_transform_cuda<at::Float8_e4m3fn>(HadamardParamsBase &params, cudaStream_t stream);
+template void fast_hadamard_transform_cuda<at::BFloat16, at::Float8_e4m3fn>(HadamardParamsBase &params, cudaStream_t stream);
+template void fast_hadamard_transform_cuda<at::BFloat16, at::BFloat16>(HadamardParamsBase &params, cudaStream_t stream);
+
+template void fast_hadamard_transform_cuda<at::Float8_e4m3fn, at::BFloat16>(HadamardParamsBase &params, cudaStream_t stream);
+template void fast_hadamard_transform_cuda<at::Float8_e4m3fn, at::Float8_e4m3fn>(HadamardParamsBase &params, cudaStream_t stream);

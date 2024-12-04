@@ -79,7 +79,6 @@ at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::opt
     const int dim = x.size(1);
 
     at::ScalarType out_type;
-
     if (out_type_.has_value()){
         out_type = out_type_.value();
     } else {

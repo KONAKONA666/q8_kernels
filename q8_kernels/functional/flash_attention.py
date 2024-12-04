@@ -43,11 +43,11 @@ class FlashAttnFunc(torch.autograd.Function):
             v = torch.nn.functional.pad(v, (0, v_tokens_pad))
         
         if apply_qk_hadamard:
-            q = hadamard_transform(q)
-            k = hadamard_transform(k)
-            if is_16bit(q) and is_16bit(k):
-                q = q.to(torch.float8_e4m3fn)
-                k = k.to(torch.float8_e4m3fn)
+            q = hadamard_transform(q, out_type=torch.float8_e4m3fn)
+            k = hadamard_transform(k, out_type=torch.float8_e4m3fn)
+            # if is_16bit(q) and is_16bit(k):
+            #     q = q.to(torch.float8_e4m3fn)
+            #     k = k.to(torch.float8_e4m3fn)
 
         o = flash_attention(q, k, v, softmax_scale, batch_mask)
         return o[..., :head_size_og]

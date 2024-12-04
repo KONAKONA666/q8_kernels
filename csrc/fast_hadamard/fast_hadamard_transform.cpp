@@ -15,25 +15,27 @@ KONAKONA666: added fp8 support
 
 #define CHECK_SHAPE(x, ...) TORCH_CHECK(x.sizes() == torch::IntArrayRef({__VA_ARGS__}), #x " must have shape (" #__VA_ARGS__ ")")
 
-#define DISPATCH_ITYPE_FLOAT_AND_HALF_AND_BF16_AND_FP8(ITYPE, NAME, ...)                    \
-    if (ITYPE == at::ScalarType::Half) {                                            \
-        using input_t = at::Half;                                                   \
-        __VA_ARGS__();                                                              \
-    } else if (ITYPE == at::ScalarType::BFloat16) {                                 \
+
+#define HINPUT_TYPE_SWITCH(ITYPE, ...)      \
+    if (ITYPE == at::ScalarType::BFloat16) {                                 \
         using input_t = at::BFloat16;                                               \
-        __VA_ARGS__();                                                              \
-    } else if (ITYPE == at::ScalarType::Float) {                                    \
-        using input_t = float;                                                      \
-        __VA_ARGS__();                                                              \
+        __VA_ARGS__;                                                              \
     } else if(ITYPE == at::ScalarType::Float8_e4m3fn) {                             \
         using input_t = at::Float8_e4m3fn;                                          \
-        __VA_ARGS__();                                                              \
-    }                                                                               \
-    else {                                                                          \
-        AT_ERROR(#NAME, " not implemented for input type '", toString(ITYPE), "'"); \
-    }
+        __VA_ARGS__;                                                              \
+    }                                                                               
 
-template<typename input_t>
+#define HOTYPE_SWITCH(OTYPE, ...)      \
+    if (OTYPE == at::ScalarType::BFloat16) {                                 \
+        using output_t = at::BFloat16;                                               \
+        __VA_ARGS__;                                                              \
+    } else if(OTYPE == at::ScalarType::Float8_e4m3fn) {                             \
+        using output_t = at::Float8_e4m3fn;                                          \
+        __VA_ARGS__;                                                              \
+    }                                                                               \
+
+
+template<typename input_t, typename output_t>
 void fast_hadamard_transform_cuda(HadamardParamsBase &params, cudaStream_t stream);
 
 void set_hadamard_params(HadamardParamsBase &params,
@@ -66,10 +68,9 @@ void set_hadamard_params(HadamardParamsBase &params,
 
 
 at::Tensor
-fast_hadamard_transform(at::Tensor &x, float scale) {
+fast_hadamard_transform(at::Tensor &x, float scale, std::optional<at::ScalarType>& out_type_) {
     auto input_type = x.scalar_type();
-    TORCH_CHECK(input_type == at::ScalarType::Float || input_type == at::ScalarType::Half || input_type == at::ScalarType::BFloat16 || input_type == at::ScalarType::Float8_e4m3fn);
-
+    TORCH_CHECK(input_type == at::ScalarType::BFloat16 || input_type == at::ScalarType::Float8_e4m3fn);
     TORCH_CHECK(x.is_cuda());
 
     const auto shapes_og = x.sizes();
@@ -90,8 +91,15 @@ fast_hadamard_transform(at::Tensor &x, float scale) {
     TORCH_CHECK(dim % 8 == 0, "fast_hadamard_transform only supports hidden dimension divisible by 8 for now");
     TORCH_CHECK(dim <= 32768, "fast_hadamard_transform only supports hidden dimension at most 32768 for now");
 
-    at::Tensor out = torch::empty_like(x);
+    at::ScalarType out_type;
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = x.scalar_type();
+    }
 
+    at::Tensor out = torch::empty(x.sizes(), x.options().dtype(out_type));
+    
     HadamardParamsBase params;
     set_hadamard_params(params, batch_size, dim, 1, x, out, scale);
 
@@ -99,9 +107,13 @@ fast_hadamard_transform(at::Tensor &x, float scale) {
     // Cast to char to avoid compiler warning about narrowing
     at::cuda::CUDAGuard device_guard{(char)x.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
-    DISPATCH_ITYPE_FLOAT_AND_HALF_AND_BF16_AND_FP8(x.scalar_type(), "fast_hadamard_transform", [&] {
-        fast_hadamard_transform_cuda<input_t>(params, stream);
-    });
+
+    HOTYPE_SWITCH(out_type, 
+        HINPUT_TYPE_SWITCH(x.scalar_type(), 
+            fast_hadamard_transform_cuda<input_t, output_t>(params, stream);
+        );
+    );    
+
     if (dim_og % 8 != 0) {
         out = out.index({torch::indexing::Slice(), torch::indexing::Slice(torch::indexing::None, dim_og)});
     }

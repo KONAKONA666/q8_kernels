@@ -10,9 +10,9 @@ from q8_kernels_cuda.ops._C import fast_hadamard_transform
 
 class HadamardTransformFn(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, scale=1.0):
+    def forward(ctx, x, scale=1.0, out_type=None):
         ctx._hadamard_transform_scale = scale
-        return fast_hadamard_transform(x, scale)
+        return fast_hadamard_transform(x, scale, out_type)
 
     @staticmethod
     def backward(ctx, dout):
@@ -21,7 +21,7 @@ class HadamardTransformFn(torch.autograd.Function):
         return fast_hadamard_transform(dout, ctx._hadamard_transform_scale), None
 
 
-def hadamard_transform(x: torch.Tensor, scale: Optional[float] = None) -> torch.Tensor:
+def hadamard_transform(x: torch.Tensor, scale: Optional[float] = None, out_type:Optional[torch.dtype]=None) -> torch.Tensor:
     """
     Arguments:
         x: (..., dim)
@@ -35,4 +35,4 @@ def hadamard_transform(x: torch.Tensor, scale: Optional[float] = None) -> torch.
     """
     if scale is None:
         scale = 1/math.sqrt(x.shape[-1])
-    return HadamardTransformFn.apply(x, scale)
+    return HadamardTransformFn.apply(x, scale, out_type)
