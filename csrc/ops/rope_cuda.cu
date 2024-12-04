@@ -10,10 +10,11 @@
 #include "rope.h"
 
 
-template<int kNThreads_, int dim, typename input_t_>
+template<int kNThreads_, int dim, typename input_t_, typename output_t_>
 struct rope_kernel_traits {
 
     using input_t = input_t_;
+    using output_t = output_t_;
     using freqs_t = float;
     using vec_t = uint4;
     
@@ -42,15 +43,24 @@ inline __device__ void load_input(input_t *x, float x_vals[NElems], int dim) {
     }     
 }
 
+
 template <int NElems, typename vec_t, typename output_t>
 inline __device__ void store_output(output_t *out, float out_vals[NElems]) {
     output_t out_vals_store[NElems];
+
+    constexpr int num_elems_per_store = sizeof(vec_t)/sizeof(output_t);
+    constexpr int num_chunks = NElems/num_elems_per_store;
+
     #pragma unroll  
     for (size_t i = 0; i < NElems; i++)
     {
         out_vals_store[i] = out_vals[i];
     }
-    reinterpret_cast<vec_t*>(out)[threadIdx.x] = reinterpret_cast<const vec_t*>(out_vals_store)[0];
+    #pragma unroll
+    for (size_t i = 0; i < num_chunks; i++)
+    {
+        reinterpret_cast<vec_t*>(out)[num_chunks*threadIdx.x+i] = reinterpret_cast<const vec_t*>(out_vals_store)[i];
+    }
 }
 
 
@@ -66,7 +76,7 @@ void rope_kernel(RopeParamsBase params) {
     using input_t = typename Ktraits::input_t;
     using freqs_t = typename Ktraits::freqs_t;
     using vec_t = typename Ktraits::vec_t;
-    using output_t = typename Ktraits::input_t;
+    using output_t = typename Ktraits::output_t;
     
     extern __shared__ float smem_[];
 
@@ -94,14 +104,14 @@ void rope_kernel(RopeParamsBase params) {
         out_vals[i+1] = x_vals[i]*sin_freqs_vals[i+1] + x_vals[i+1]*cos_freqs_vals[i+1];
     }
     
-    store_output<ThreadElems, vec_t, input_t>(out, out_vals);
+    store_output<ThreadElems, vec_t, output_t>(out, out_vals);
 }
 
 
 
-template<int kNThreads, int dim, typename input_t>
+template<int kNThreads, int dim, typename input_t, typename output_t>
 void rope_launch(RopeParamsBase &params, cudaStream_t stream) {
-    using Ktraits = rope_kernel_traits<kNThreads, dim, input_t>;
+    using Ktraits = rope_kernel_traits<kNThreads, dim, input_t, output_t>;
     
     dim3 grid(params.batch);
     auto kernel = &rope_kernel<Ktraits>;
@@ -112,14 +122,18 @@ void rope_launch(RopeParamsBase &params, cudaStream_t stream) {
 }
 
 
-template<typename input_t>
+template<typename input_t, typename output_t>
 void  rope_cuda(RopeParamsBase &params, cudaStream_t stream) {
     if (params.dim == 2048) {
-        rope_launch<128, 2048, input_t>(params, stream);
+        rope_launch<128, 2048, input_t, output_t>(params, stream);
     } else if(params.dim == 8192){
-        rope_launch<512, 8192, input_t>(params, stream);  
+        rope_launch<512, 8192, input_t, output_t>(params, stream);  
     }
 }
 
-template void rope_cuda<at::Float8_e4m3fn>(RopeParamsBase &params, cudaStream_t stream);
+template void rope_cuda<at::Float8_e4m3fn, at::Float8_e4m3fn>(RopeParamsBase &params, cudaStream_t stream);
+template void rope_cuda<at::Float8_e4m3fn, at::BFloat16>(RopeParamsBase &params, cudaStream_t stream);
+template void rope_cuda<at::BFloat16, at::Float8_e4m3fn>(RopeParamsBase &params, cudaStream_t stream);
+template void rope_cuda<at::BFloat16, at::BFloat16>(RopeParamsBase &params, cudaStream_t stream);
+
 

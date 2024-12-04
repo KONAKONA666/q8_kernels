@@ -9,9 +9,26 @@
 #include "rope.h"
 
 #define CHECK_SHAPE(x, ...) TORCH_CHECK(x.sizes() == torch::IntArrayRef({__VA_ARGS__}), #x " must have shape (" #__VA_ARGS__ ")")
+#define HINPUT_TYPE_SWITCH(ITYPE, ...)      \
+    if (ITYPE == at::ScalarType::BFloat16) {                                 \
+        using input_t = at::BFloat16;                                               \
+        __VA_ARGS__;                                                              \
+    } else if(ITYPE == at::ScalarType::Float8_e4m3fn) {                             \
+        using input_t = at::Float8_e4m3fn;                                          \
+        __VA_ARGS__;                                                              \
+    }                                                                               
+
+#define HOTYPE_SWITCH(OTYPE, ...)      \
+    if (OTYPE == at::ScalarType::BFloat16) {                                 \
+        using output_t = at::BFloat16;                                               \
+        __VA_ARGS__;                                                              \
+    } else if(OTYPE == at::ScalarType::Float8_e4m3fn) {                             \
+        using output_t = at::Float8_e4m3fn;                                          \
+        __VA_ARGS__;                                                              \
+    }                                                                               \
 
 
-template<typename input_t>
+template<typename input_t, typename output_t>
 void  rope_cuda(RopeParamsBase &params, cudaStream_t stream);
 
 
@@ -44,10 +61,10 @@ void set_rope_params(RopeParamsBase &params,
     params.sin_freq_batch_stride = sin_freqs.stride(0);
 }
 
-at::Tensor rope(at::Tensor &x, at::Tensor& cos_freqs, at::Tensor& sin_freqs) {
+at::Tensor rope(at::Tensor &x, at::Tensor& cos_freqs, at::Tensor& sin_freqs, std::optional<at::ScalarType>& out_type_) {
     auto input_type = x.scalar_type();
     auto freq_type = cos_freqs.scalar_type();
-    TORCH_CHECK(input_type == at::ScalarType::Float8_e4m3fn);
+   
     TORCH_CHECK(freq_type == at::ScalarType::Float);
 
     TORCH_CHECK(x.is_cuda());
@@ -73,16 +90,25 @@ at::Tensor rope(at::Tensor &x, at::Tensor& cos_freqs, at::Tensor& sin_freqs) {
     TORCH_CHECK(x.stride(1) == 1);
     const int dim = x.size(1);
 
-  
-    at::Tensor out = torch::empty_like(x);
+    at::ScalarType out_type;
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = x.scalar_type();
+    }
+    at::Tensor out = torch::empty(x.sizes(), x.options().dtype(out_type));
     
     RopeParamsBase params;
     set_rope_params(params, batch_size, dim, x, cos_freqs, sin_freqs, out);
 
     at::cuda::CUDAGuard device_guard{(char)x.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
-   
-    rope_cuda<at::Float8_e4m3fn>(params, stream);
+    
+    HOTYPE_SWITCH(out_type, 
+        HINPUT_TYPE_SWITCH(x.scalar_type(), 
+            rope_cuda<input_t, output_t>(params, stream);
+        );
+    );    
 
     return out.reshape(shapes_og);
 }
