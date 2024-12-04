@@ -49,6 +49,7 @@ class LTXTransformer3DModel(ModelMixin, ConfigMixin):
         positional_embedding_max_pos: Optional[List[int]] = None,
         timestep_scale_multiplier: Optional[float] = None,
     ):
+        super().__init__()
         inner_dim = num_attention_heads * attention_head_dim
         self.patchify_proj = nn.Linear(in_channels, inner_dim, bias=True)
         self.transformer_blocks = nn.ModuleList(
@@ -210,7 +211,7 @@ def get_ltx_transformer():
         2048,
         True,
         False,
-        2048,
+        4096,
         True,
         10000.0,
         [20, 2048, 2048],

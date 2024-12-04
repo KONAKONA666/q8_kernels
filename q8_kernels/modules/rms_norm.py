@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 
 import q8_kernels.functional as Q8F
+from typing import *
+
 
 class RMSNorm(nn.Module):
     def __init__(self, dim: int, elementwise_affine: bool = True, device=None):
@@ -13,3 +15,5 @@ class RMSNorm(nn.Module):
     
     def forward(self, x, out_dtype=None):
         return Q8F.rms_norm.rms_norm_8bit(x, self.weight, out_dtype)
+    
+    # https://re-chill.tistory.com/entry/How-to-hook-to-or-cuda

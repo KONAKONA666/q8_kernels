@@ -16,12 +16,13 @@ class LTXTransformerBlock(nn.Module):
         self.ff = FeedForward(dim, bias=bias)
         self.scale_shift_table = nn.Parameter(
                 torch.randn(6, dim) / dim**0.5
-            )
+        )
 
     def forward(self, 
                 hidden_states, 
                 freqs_cis, 
-                attention_mask, encoder_hidden_states, encoder_attention_mask, 
+                attention_mask, 
+                encoder_hidden_states, encoder_attention_mask, 
                 timestep, 
                 non_mm_precision=torch.bfloat16):
         
