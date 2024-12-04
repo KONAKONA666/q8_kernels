@@ -20,7 +20,7 @@ struct fma_kernel_traits {
     static constexpr int kNThreads = kNThreads_;
     static constexpr int kNBytes_input = sizeof(x_type_t);
     static_assert(kNBytes_input == 1 || kNBytes_input == 2 || kNBytes_input == 4);
-    static constexpr int ThreadElems = kNBytes_input == 4 ? 4 : kNBytes_input == 2 ? 8 : 16;
+    static constexpr int ThreadElems = 16;
     static_assert(ThreadElems * kNThreads == dim);
 };
 

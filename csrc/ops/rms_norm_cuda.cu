@@ -9,10 +9,11 @@
 
 #include "rms_norm.h"
 
-template<int kNThreads_, int dim, bool norm_affine_, typename input_t_>
+template<int kNThreads_, int dim, bool norm_affine_, typename input_t_, typename output_t_>
 struct rmsnorm_kernel_traits {
 
     using input_t = input_t_;
+    using output_t = output_t_;
     using weights_t = float;
     using vec_t = uint4;
     
@@ -20,7 +21,7 @@ struct rmsnorm_kernel_traits {
     static constexpr int kNThreads = kNThreads_;
     static constexpr int kNBytes_input = sizeof(input_t);
     static_assert(kNBytes_input == 1 || kNBytes_input == 2 || kNBytes_input == 4);
-    static constexpr int ThreadElems = kNBytes_input == 4 ? 4 : kNBytes_input == 2 ? 8 : 16;
+    static constexpr int ThreadElems = 16;
     static_assert(ThreadElems * kNThreads == dim);
 };
 
@@ -48,12 +49,20 @@ inline __device__ void load_input(input_t *x, float x_vals[NElems]) {
 template <int NElems, typename vec_t, typename output_t>
 inline __device__ void store_output(output_t *out, float out_vals[NElems]) {
     output_t out_vals_store[NElems];
+
+    constexpr int num_elems_per_store = sizeof(vec_t)/sizeof(output_t);
+    constexpr int num_chunks = NElems/num_elems_per_store;
+
     #pragma unroll  
     for (size_t i = 0; i < NElems; i++)
     {
         out_vals_store[i] = out_vals[i];
     }
-    reinterpret_cast<vec_t*>(out)[threadIdx.x] = reinterpret_cast<const vec_t*>(out_vals_store)[0];
+    #pragma unroll
+    for (size_t i = 0; i < num_chunks; i++)
+    {
+        reinterpret_cast<vec_t*>(out)[num_chunks*threadIdx.x+i] = reinterpret_cast<const vec_t*>(out_vals_store)[i];
+    }
 }
 
 
@@ -100,7 +109,7 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
     using input_t = typename Ktraits::input_t;
     using weights_t = typename Ktraits::weights_t;
     using vec_t = typename Ktraits::vec_t;
-    using output_t = typename Ktraits::input_t;
+    using output_t = typename Ktraits::output_t;
 
 
     extern __shared__ float smem_[];
@@ -158,13 +167,13 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
         }
     }
     
-    store_output<ThreadElems, vec_t, input_t>(out, x_vals);
+    store_output<ThreadElems, vec_t, output_t>(out, x_vals);
 }
 
 
-template<int kNThreads, int dim, bool norm_affine, typename input_t>
+template<int kNThreads, int dim, bool norm_affine, typename input_t, typename output_t>
 void rms_norm_launch(RMSNormsParamsBase &params, cudaStream_t stream) {
-    using Ktraits = rmsnorm_kernel_traits<kNThreads, dim, norm_affine, input_t>;
+    using Ktraits = rmsnorm_kernel_traits<kNThreads, dim, norm_affine, input_t, output_t>;
     
     dim3 grid(params.batch);
     auto kernel = &rms_norm_kernel<Ktraits>;
@@ -176,14 +185,33 @@ void rms_norm_launch(RMSNormsParamsBase &params, cudaStream_t stream) {
 }
 
 
-template<bool norm_affine, typename input_t>
+template<bool norm_affine, typename input_t, typename output_t>
 void  rms_norm_cuda(RMSNormsParamsBase &params, cudaStream_t stream) {
     if (params.dim == 2048) {
-        rms_norm_launch<128, 2048, norm_affine, input_t>(params, stream);
+        rms_norm_launch<128, 2048, norm_affine, input_t, output_t>(params, stream);
     } else if(params.dim == 8192){
-        rms_norm_launch<512, 8192, norm_affine, input_t>(params, stream);  
+        rms_norm_launch<512, 8192, norm_affine, input_t, output_t>(params, stream);  
     }
 }
 
-template void rms_norm_cuda<true, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
-template void rms_norm_cuda<false, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
+template void rms_norm_cuda<true, at::Float8_e4m3fn, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
+template void rms_norm_cuda<false, at::Float8_e4m3fn, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
+
+template void rms_norm_cuda<true, at::Float8_e4m3fn, at::BFloat16>(RMSNormsParamsBase &params, cudaStream_t stream);
+template void rms_norm_cuda<false, at::Float8_e4m3fn, at::BFloat16>(RMSNormsParamsBase &params, cudaStream_t stream);
+
+template void rms_norm_cuda<true, at::BFloat16, at::BFloat16>(RMSNormsParamsBase &params, cudaStream_t stream);
+template void rms_norm_cuda<false, at::BFloat16, at::BFloat16>(RMSNormsParamsBase &params, cudaStream_t stream);
+
+template void rms_norm_cuda<true, at::BFloat16, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
+template void rms_norm_cuda<false, at::BFloat16, at::Float8_e4m3fn>(RMSNormsParamsBase &params, cudaStream_t stream);
+
+// template void rms_norm_cuda<true, at::Half, at::Half>(RMSNormsParamsBase &params, cudaStream_t stream);
+// template void rms_norm_cuda<false, at::Half, at::Half>(RMSNormsParamsBase &params, cudaStream_t stream);
+
+// template void rms_norm_cuda<true, at::Half, at::BFloat16>(RMSNormsParamsBase &params, cudaStream_t stream);
+// template void rms_norm_cuda<false, at::Half, at::BFloat16>(RMSNormsParamsBase &params, cudaStream_t stream);
+
+// template void rms_norm_cuda<true, at::BFloat16, at::Half>(RMSNormsParamsBase &params, cudaStream_t stream);
+// template void rms_norm_cuda<false, at::BFloat16, at::Half>(RMSNormsParamsBase &params, cudaStream_t stream);
+

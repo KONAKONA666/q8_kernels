@@ -9,9 +9,27 @@
 #include "rms_norm.h"
 
 #define CHECK_SHAPE(x, ...) TORCH_CHECK(x.sizes() == torch::IntArrayRef({__VA_ARGS__}), #x " must have shape (" #__VA_ARGS__ ")")
+#define INPUT_TYPE_SWITCH(ITYPE, ...)      \
+    if (ITYPE == at::ScalarType::BFloat16) {                                 \
+        using input_t = at::BFloat16;                                               \
+        __VA_ARGS__;                                                              \
+    } else if(ITYPE == at::ScalarType::Float8_e4m3fn) {                             \
+        using input_t = at::Float8_e4m3fn;                                          \
+        __VA_ARGS__;                                                              \
+    }                                                                               
+
+#define OTYPE_SWITCH(OTYPE, ...)      \
+    if (OTYPE == at::ScalarType::BFloat16) {                                 \
+        using output_t = at::BFloat16;                                               \
+        __VA_ARGS__;                                                              \
+    } else if(OTYPE == at::ScalarType::Float8_e4m3fn) {                             \
+        using output_t = at::Float8_e4m3fn;                                          \
+        __VA_ARGS__;                                                              \
+    }                                                                               \
 
 
-template<bool norm_affine, typename input_t>
+
+template<bool norm_affine, typename input_t, typename output_t>
 void  rms_norm_cuda(RMSNormsParamsBase &params, cudaStream_t stream);
 
 
@@ -42,9 +60,8 @@ void set_rms_norm_params(RMSNormsParamsBase &params,
     params.out_batch_stride = out.stride(0);
 }
 
-at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_) {
+at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::optional<at::ScalarType>& out_type_) {
     auto input_type = x.scalar_type();
-    TORCH_CHECK(input_type == at::ScalarType::Float8_e4m3fn);
     TORCH_CHECK(x.is_cuda());
 
     const auto shapes_og = x.sizes();    
@@ -61,8 +78,15 @@ at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_) {
 
     const int dim = x.size(1);
 
+    at::ScalarType out_type;
+
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = x.scalar_type();
+    }
   
-    at::Tensor out = torch::empty_like(x);
+    at::Tensor out = torch::empty(x.sizes(), x.options().dtype(out_type));
     at::Tensor weights;
     bool norm_affine = false;
     if(weights_.has_value()){
@@ -77,12 +101,15 @@ at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_) {
     at::cuda::CUDAGuard device_guard{(char)x.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     
-    if (norm_affine){
-        rms_norm_cuda<true, at::Float8_e4m3fn>(params, stream);
-    } else {
-        rms_norm_cuda<false, at::Float8_e4m3fn>(params, stream);
-    }
-    
+    OTYPE_SWITCH(out_type, 
+        INPUT_TYPE_SWITCH(input_type, 
+            if (norm_affine){ 
+                rms_norm_cuda<true, input_t, output_t>(params, stream); 
+            } else {    
+                rms_norm_cuda<false, input_t, output_t>(params, stream); 
+            } 
+        );
+    );    
     return out.reshape(shapes_og);
 }
 
