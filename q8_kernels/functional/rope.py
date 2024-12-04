@@ -12,6 +12,6 @@ class ROPE(torch.autograd.Function):
         assert cos_freqs.shape == x.shape and sin_freqs.shape == sin_freqs.shape
 
         return rope(x, cos_freqs, sin_freqs, out_type)
-    
+
 def apply_rope(x: torch.Tensor, cos_freqs: torch.Tensor, sin_freqs: torch.Tensor, out_type: Optional[torch.dtype]=None) -> torch.Tensor:
     return ROPE.apply(x, cos_freqs, sin_freqs, out_type)
