@@ -16,21 +16,27 @@ struct quantizer_kernel_traits {
     static constexpr int kNThreads = kNThreads_;
     static constexpr int kNBytes_input = sizeof(input_t);
     static_assert(kNBytes_input == 1 || kNBytes_input == 2 || kNBytes_input == 4);
-    static constexpr int ThreadElems = kNBytes_input == 4 ? 4 : kNBytes_input == 2 ? 8 : 16;
+    static constexpr int ThreadElems = 16;
     static_assert(ThreadElems * kNThreads == dim);
 };
 
 template <int NElems, typename input_t, typename vec_t>
-inline __device__ void load_input(input_t *x, float x_vals[NElems]) {
+inline __device__ void load_input(input_t *x, float x_vals[NElems], int dim) {
     input_t x_vals_load[NElems] = {0};
-    reinterpret_cast<vec_t*>(x_vals_load)[0] = reinterpret_cast<const vec_t*>(x)[threadIdx.x];
+    constexpr int num_elems_per_load = sizeof(vec_t)/sizeof(input_t);
+    constexpr int num_chunks = NElems/num_elems_per_load;
+
+    #pragma unroll
+    for (size_t i = 0; i < num_chunks; i++)
+    {
+        reinterpret_cast<vec_t*>(x_vals_load)[i] = reinterpret_cast<const vec_t*>(x)[num_chunks*threadIdx.x+i];
+    }
     #pragma unroll  
     for (size_t i = 0; i < NElems; i++)
     {
         x_vals[i] = float(x_vals_load[i]);
-    }
+    }     
 }
-
 
 template <int NElems, typename vec_t, typename output_t>
 inline __device__ void store_output(output_t *out, float out_vals[NElems]) {
@@ -42,6 +48,7 @@ inline __device__ void store_output(output_t *out, float out_vals[NElems]) {
     }
     reinterpret_cast<vec_t*>(out)[threadIdx.x] = reinterpret_cast<const vec_t*>(out_vals_store)[0];
 }
+
 
 template<typename T>
 struct MaxOp {
@@ -97,7 +104,7 @@ void tokenwise_quantization_kernel(QuantizerParamsBase params) {
     float *out_scales = reinterpret_cast<float *>(params.out_scales_ptr) + batch_id;
 
     float x_vals[ThreadElems];
-    load_input<ThreadElems, input_t, vec_t>(x, x_vals);
+    load_input<ThreadElems, input_t, vec_t>(x, x_vals, params.dim);
     
     float thread_max = abs(x_vals[0]);
     #pragma unroll  
@@ -153,4 +160,7 @@ void  quantizer_cuda(QuantizerParamsBase &params, cudaStream_t stream) {
     }
 }
 
+template void quantizer_cuda<float, int8_t>(QuantizerParamsBase &params, cudaStream_t stream);
+template void quantizer_cuda<at::BFloat16, int8_t>(QuantizerParamsBase &params, cudaStream_t stream);
+template void quantizer_cuda<at::Half, int8_t>(QuantizerParamsBase &params, cudaStream_t stream);
 template void quantizer_cuda<at::Float8_e4m3fn, int8_t>(QuantizerParamsBase &params, cudaStream_t stream);

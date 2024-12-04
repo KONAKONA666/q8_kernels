@@ -8,7 +8,27 @@
 
 #include "tokenwise_quant.h"
 
+
+
 #define CHECK_SHAPE(x, ...) TORCH_CHECK(x.sizes() == torch::IntArrayRef({__VA_ARGS__}), #x " must have shape (" #__VA_ARGS__ ")")
+
+#define DISPATCH_ITYPE_FLOAT_AND_HALF_AND_BF16_AND_FP8(ITYPE, NAME, ...)                    \
+    if (ITYPE == at::ScalarType::Half) {                                            \
+        using input_t = at::Half;                                                   \
+        __VA_ARGS__();                                                              \
+    } else if (ITYPE == at::ScalarType::BFloat16) {                                 \
+        using input_t = at::BFloat16;                                               \
+        __VA_ARGS__();                                                              \
+    } else if (ITYPE == at::ScalarType::Float) {                                    \
+        using input_t = float;                                                      \
+        __VA_ARGS__();                                                              \
+    } else if(ITYPE == at::ScalarType::Float8_e4m3fn) {                             \
+        using input_t = at::Float8_e4m3fn;                                          \
+        __VA_ARGS__();                                                              \
+    }                                                                               \
+    else {                                                                          \
+        AT_ERROR(#NAME, " not implemented for input type '", toString(ITYPE), "'"); \
+    }
 
 template<typename input_t, typename output_t>
 void quantizer_cuda(QuantizerParamsBase &params, cudaStream_t stream);
@@ -40,10 +60,7 @@ void set_quantizer_params(QuantizerParamsBase &params,
 }
 
 std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x) {
-    auto input_type = x.scalar_type();
-    TORCH_CHECK(input_type == at::ScalarType::Float8_e4m3fn);
-    TORCH_CHECK(x.is_cuda());
-
+    printf(toString(x.scalar_type()));
     const auto shapes_og = x.sizes();
     
     const int dim_og = x.size(-1);
@@ -52,10 +69,6 @@ std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x) {
     if (x.stride(-1) != 1) { x = x.contiguous(); }
     const auto sizes = x.sizes();
     const int batch_size = sizes[0];
-
-    CHECK_SHAPE(x, batch_size, dim_og);
-    TORCH_CHECK(x.stride(1) == 1);
-
     const int dim = x.size(1);
 
     auto opts = x.options();
@@ -68,8 +81,9 @@ std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x) {
     at::cuda::CUDAGuard device_guard{(char)x.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
    
-    quantizer_cuda<at::Float8_e4m3fn, int8_t>(params, stream);
-
+    DISPATCH_ITYPE_FLOAT_AND_HALF_AND_BF16_AND_FP8(x.scalar_type(), "tokenwise_quant", [&] {
+        quantizer_cuda<input_t, int8_t>(params, stream);
+    });
     return {out.reshape(shapes_og), out_scales.reshape(torch::IntArrayRef(shapes_og.begin(), shapes_og.size()-1))};
 }
 

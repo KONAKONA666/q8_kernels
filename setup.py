@@ -10,7 +10,7 @@ from torch.utils.cpp_extension import (
 )
 
 # package name managed by pip, which can be remove by `pip uninstall tiny_pkg`
-PACKAGE_NAME = "q8_matmul"
+PACKAGE_NAME = "q8_kernels"
 
 ext_modules = []
 generator_flag = []
@@ -42,7 +42,7 @@ this_dir = os.path.dirname(os.path.abspath(__file__))
 ext_modules.append(
     CUDAExtension(
         # package name for import
-        name="q8_matmul.gemm._C",
+        name="q8_kernels_cuda.gemm._C",
         sources=[
             "csrc/gemm/q8_gemm_api.cpp",
             "csrc/gemm/q8_matmul_bias.cu",
@@ -85,7 +85,7 @@ ext_modules.append(
 ext_modules.append(
     CUDAExtension(
         # package name for import
-        name="q8_matmul.quantizer._C",
+        name="q8_kernels_cuda.quantizer._C",
         sources=[
             "csrc/quantizer/tokenwise_quant.cpp",
             "csrc/quantizer/tokenwise_quant_cuda.cu",
@@ -127,7 +127,7 @@ ext_modules.append(
 ext_modules.append(
     CUDAExtension(
         # package name for import
-        name="q8_matmul.ops._C",
+        name="q8_kernels_cuda.ops._C",
         sources=[
             "csrc/ops/ops_api.cpp",
             
@@ -182,7 +182,7 @@ ext_modules.append(
 ext_modules.append(
     CUDAExtension(
         # package name for import
-        name="q8_matmul.flash_attention._C",
+        name="q8_kernels_cuda.flash_attention._C",
         sources=[
             "csrc/flash_attention/flash_attention.cpp",
             "csrc/flash_attention/flash_attention_cuda.cu",
@@ -233,7 +233,7 @@ setup(
             "benchmarks",
         )
     ),
-    description="Attention mechanism implement by CUDA",
+    description="8bit kernels",
     ext_modules=ext_modules,
     cmdclass={ "build_ext": BuildExtension},
     python_requires=">=3.7",

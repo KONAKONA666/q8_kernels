@@ -11,6 +11,14 @@
         "utility": "cpp",
         "cmath": "cpp",
         "cstdint": "cpp",
-        "system_error": "cpp"
+        "system_error": "cpp",
+        "optional": "cpp",
+        "list": "cpp",
+        "vector": "cpp",
+        "xhash": "cpp",
+        "xstring": "cpp",
+        "xtree": "cpp",
+        "xutility": "cpp",
+        "xtr1common": "cpp"
     }
 }

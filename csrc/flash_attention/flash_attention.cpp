@@ -29,7 +29,7 @@ torch::Tensor flash_attention(torch::Tensor& q, torch::Tensor& k,
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     
     auto out = torch::empty_like(q);
-    softmax_scale = softmax_scale*1.44269504f;
+    softmax_scale = softmax_scale*1.44269504088896340736f;
 
     if(batch_mask_.has_value()){
         at::Tensor batch_mask;
