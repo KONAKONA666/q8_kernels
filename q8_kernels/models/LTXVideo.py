@@ -81,7 +81,7 @@ class LTXTransformer3DModel(ModelMixin, ConfigMixin):
         self.timestep_scale_multiplier = timestep_scale_multiplier
         self.positional_embedding_max_pos = positional_embedding_max_pos
         self.positional_embedding_theta = positional_embedding_theta
-
+        self.inner_dim = inner_dim
     def get_fractional_positions(self, indices_grid):
         fractional_positions = torch.stack(
             [
