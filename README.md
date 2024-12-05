@@ -22,6 +22,9 @@ q8_kernels was tested on Windows machine. Dont see problem with building on Linu
 
 ```
 git clone https://github.com/KONAKONA666/q8_kernels
+git submodule init
+git submodule update
+
 cd q8_kernels && pip install .
 ```
 
