@@ -30,6 +30,7 @@ git submodule init
 git submodule update
 
 python setup.py install
+pip install . # for utility
 ```
 
 It takes ~10-15 minutes to compile and install all modules.
