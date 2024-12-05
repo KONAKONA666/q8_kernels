@@ -20,7 +20,7 @@ Current version supports ADA Architecture(Ampere optimizations are coming soon!)
 q8_kernels requires CUDA Version >= 12.4 and pytorch >=2.4.
 q8_kernels was tested on Windows machine. Dont see problem with building on Linux systems.
 Install ninja ```pip install ninja```
-Make sure that ninja is installed and that it works correctly (e.g. ninja --version)
+Make sure that ninja is installed and that it works correctly (e.g. ninja --version).
 Without ninja installation is very slow.
 
 ```
@@ -29,7 +29,7 @@ cd q8_kernels
 git submodule init
 git submodule update
 
-pip install .
+python setup.py install
 ```
 
 It takes ~10-15 minutes to compile and install all modules.
