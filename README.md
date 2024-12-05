@@ -33,7 +33,7 @@ python setup.py install
 ```
 
 It takes ~10-15 minutes to compile and install all modules.
-If you have RAM < 32GB, 
+
 
 ## Supported models
 Speed ups are computed relative to transformers with inference with 16bit and flash attention 2 
