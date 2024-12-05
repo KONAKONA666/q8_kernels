@@ -246,7 +246,15 @@ setup(
         "einops",
         "packaging",
         "ninja",
+        "",
     ],
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: BSD License",
+        "Operating System :: Unix",
+    ],
+    author="KONAKONA666/Aibek Bekbayev",
+    author_email="konakona666@proton.me",
 )
 
 

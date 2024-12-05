@@ -165,3 +165,5 @@ debug/
 *.ipynb
 
 logs.txt
+test_*.py
+attn_test.py
