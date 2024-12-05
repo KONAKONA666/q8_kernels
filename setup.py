@@ -234,6 +234,11 @@ setup(
     ),
     description="8bit kernels",
     ext_modules=ext_modules,
+    entry_points={
+        'console_scripts': [
+            'q8_kernels.convert_weights=q8_kernels.utils.convert_weights:main',
+        ],
+    },
     cmdclass={ "build_ext": BuildExtension},
     python_requires=">=3.7",
     install_requires=[

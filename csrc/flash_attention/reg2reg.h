@@ -1,3 +1,4 @@
+// credits: https://github.com/ColfaxResearch/cutlass-kernels/tree/master
 #pragma once
 
 #include "cutlass/bfloat16.h"
