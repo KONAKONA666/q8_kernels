@@ -29,7 +29,7 @@ cd q8_kernels && pip install .
 Speed ups are computed relative to transformers with inference with 16bit and flash attention 2 
 |Model name | Speed up                                 |
 | -------- | -------- |
-| [LTXVideo](https://github.com/KONAKONA666/LTX-Video)| up to 3x |
+| [LTXVideo](https://github.com/KONAKONA666/LTX-Video)| up to 2.5x |
 
 ## Acknowledgement
 Thanks to:
