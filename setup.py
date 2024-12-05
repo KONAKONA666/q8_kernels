@@ -246,7 +246,6 @@ setup(
         "einops",
         "packaging",
         "ninja",
-        "",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
