@@ -4,13 +4,13 @@
 
 Q8Kernels is a efficent implementation of 8bit kernels(FP8 and INT8).
 ## Features:
--8bit GEMM(with fused gelu and bias) / 2x faster than cuBLAS FP8 and 4x faster than torch.mm
--FP8 Flash Attention 2 with Fast Hadamard Transform(also supports cross attention mask support) / 2x faster than flash attention 2
--Mixed Precision Fast Hadamard Transform
--RMSNorm
--Mixed Precision FMA
--RoPE Layer
--Quantizers
+-8bit GEMM(with fused gelu and bias) / 2x faster than cuBLAS FP8 and 4x faster than torch.mm <br />
+-FP8 Flash Attention 2 with Fast Hadamard Transform(also supports cross attention mask support) / 2x faster than flash attention 2 <br />
+-Mixed Precision Fast Hadamard Transform  <br />
+-RMSNorm <br />
+-Mixed Precision FMA <br />
+-RoPE Layer <br />
+-Quantizers <br />
 
 All operations are implemented in CUDA. 
 Current version supports ADA Architecture(Ampere optimizations are coming soon!).
