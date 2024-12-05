@@ -37,6 +37,8 @@ Thanks to:
 [@66RING](https://github.com/66RING/tiny-flash-attention)
 [fast-hadamard-transform](https://github.com/Dao-AILab/fast-hadamard-transform)
 [cutlass](https://github.com/NVIDIA/cutlass)
+## Authors
+KONAKONA666
 ## License
 
 MIT
