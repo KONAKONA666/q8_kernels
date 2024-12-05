@@ -353,7 +353,7 @@ __global__ void gemm_q8_kernel(const int8_t * Aptr, const int8_t * Bptr,
     }
 }
 
-void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu){
+void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream){
     
     int BATCH;
     TORCH_CHECK(BB == BB || (BA == 1 || BB==1) , "Batch size missmatch");
@@ -525,59 +525,7 @@ void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales
                                                 R2SCopyAtomC, S2GCopyAtomC, S2GCopyC>;
                 cudaFuncSetAttribute(
                                 kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shm_size);
-                kernel<<<grid, block, shm_size>>>((int8_t*)A, (int8_t*)B, A_scales, B_scales, (float_e4m3_t*)C, M, N, K, BATCH););
+                kernel<<<grid, block, shm_size, stream>>>((int8_t*)A, (int8_t*)B, A_scales, B_scales, (float_e4m3_t*)C, M, N, K, BATCH););
         );
     );
-}
-
-
-torch::Tensor q8_mm(torch::Tensor a, torch::Tensor b, torch::Tensor a_scales, torch::Tensor b_scales, bool fuse_gelu){
-
-    CHECK_INPUT(a);
-    CHECK_INPUT(b);
-
-    int m, n, k;
-
-    // batch size
-    int a_ndim = a.sizes().size();
-    int b_ndim = b.sizes().size();
-
-    int bs_a;
-    if(a_ndim == 3){
-        bs_a = a.size(0);
-        m = a.size(1);
-    } else {
-        bs_a = 1;
-        m = a.size(0);
-    }
-    
-    int bs_b;
-    if(b_ndim == 3){
-        bs_b = b.size(0);
-        n = b.size(1);
-    } else {
-        bs_b = 1;
-        n = b.size(0);
-    }
-
-    k = a.size(a_ndim - 1);
-
-    TORCH_CHECK(bs_a == bs_b || bs_a == 1 || bs_b == 1, "Batch missmatch");
-
-    int batch;
-    if(bs_a == 1 || bs_b == 1){
-        batch = bs_a * bs_b;
-    } else {
-        batch = bs_a;
-    }
-
-    auto opts = a.options();
-    auto out = torch::empty({batch, m, n}, opts.dtype(torch::kFloat8_e4m3fn));
-
-    run_q8_gemm(a.data_ptr<int8_t>(), b.data_ptr<int8_t>(), out.data_ptr(), a_scales.data_ptr<float>(), b_scales.data_ptr<float>(), bs_a, bs_b, m, n, k, fuse_gelu);
-
-    cudaDeviceSynchronize();
-    CUDA_ERROR_CHECK(cudaGetLastError());
-
-    return out;
 }
