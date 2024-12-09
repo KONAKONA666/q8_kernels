@@ -4,7 +4,7 @@
 
 Q8Kernels is a efficent implementation of 8bit kernels(FP8 and INT8).
 ## Features:
--8bit GEMM(with fused gelu and bias) / 2x faster than cuBLAS FP8 and 4x faster than torch.mm <br />
+-8bit GEMM(with fused gelu and bias) / 2x faster than cuBLAS FP8 and 3.5x faster than torch.mm <br />
 -FP8 Flash Attention 2 with Fast Hadamard Transform(also supports cross attention mask) / 2x faster than flash attention 2 <br />
 -Mixed Precision Fast Hadamard Transform  <br />
 -RMSNorm <br />
