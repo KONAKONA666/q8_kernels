@@ -45,9 +45,15 @@ Speed ups are computed relative to transformers with inference with 16bit and fl
 ## Acknowledgement
 Thanks to:
 [Flash attention](https://github.com/Dao-AILab/flash-attention/tree/main)
+
 [@66RING](https://github.com/66RING/tiny-flash-attention)
+
 [fast-hadamard-transform](https://github.com/Dao-AILab/fast-hadamard-transform)
+
 [cutlass](https://github.com/NVIDIA/cutlass)
+
+[@weishengying](https://github.com/weishengying): Check his CUTE exercises and flash attn implementations
+
 ## Authors
 KONAKONA666
 ## License
