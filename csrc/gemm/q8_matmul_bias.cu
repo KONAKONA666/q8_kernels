@@ -35,6 +35,9 @@ inline __device__ auto convert_fp32_fp8(Fragment const& fp32_fragment){
 }
 
 
+
+
+
 template<bool Is_Even, bool fuse_gelu_activation, int BM, int BN, int BK, bool BATCH_A, bool BATCH_B, int KStages,
         typename TiledMMA, typename G2SCopyA, typename G2SCopyB,
         typename SmemLayoutA, typename SmemLayoutB, typename SmemLayoutC,

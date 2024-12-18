@@ -17,7 +17,7 @@ inline __device__ float gelu_approximate(float x){
 }
 
 inline __device__ float gelu_erf(float x){
-    return x*0.5f*(1.0f +erff(x * 0.707106781));
+    return x*0.5f*(1.0f +erff(x * 0.707106781f));
     // return 0.5f*x*(1.0f + tanhf(sqrthalfpi2*(x + factor*x*x*x)));
 }
 
