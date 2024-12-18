@@ -3,6 +3,8 @@ from typing import Optional, Sequence, Tuple, Union
 import torch
 import torch.nn as nn
 
+import math
+
 from q8_kernels_cuda.flash_attention._C import flash_attention
 from .fast_hadamard import hadamard_transform
 
@@ -43,13 +45,17 @@ class FlashAttnFunc(torch.autograd.Function):
             v = torch.nn.functional.pad(v, (0, v_tokens_pad))
         
         if apply_qk_hadamard:
-            q = hadamard_transform(q, out_type=torch.float8_e4m3fn)
-            k = hadamard_transform(k, out_type=torch.float8_e4m3fn)
-            # if is_16bit(q) and is_16bit(k):
-            #     q = q.to(torch.float8_e4m3fn)
-            #     k = k.to(torch.float8_e4m3fn)
-
-        o = flash_attention(q, k, v, softmax_scale, batch_mask)
+            hd_scale = math.sqrt(1/q.shape[-1])
+            q = hadamard_transform(q, scale=hd_scale * math.sqrt(softmax_scale), out_type=torch.float8_e4m3fn)
+            k = hadamard_transform(k, scale=hd_scale * math.sqrt(softmax_scale), out_type=torch.float8_e4m3fn)
+            o = flash_attention(q, k, v, 1.0, batch_mask)
+        else:
+            if is_16bit(q):
+                q = q.to(torch.float8_e4m3fn)
+            if is_16bit(k):
+                k = k.to(torch.float8_e4m3fn)   
+            o = flash_attention(q, k, v, softmax_scale, batch_mask)
+            
         return o[..., :head_size_og]
     
 
