@@ -178,7 +178,7 @@ inline __device__ void scale_apply_exp2(Tensor<Engine0, Layout0> &tensor, Tensor
         const float max_scaled = max(mi) == -INFINITY ? 0.0f : max(mi) * softmax_scale;
         #pragma unroll
         for (int ni = 0; ni < size<1>(tensor); ++ni)  {
-            tensor(mi, ni) =  exp2f(tensor(mi, ni) * softmax_scale - max_scaled + 8.0f);        
+            tensor(mi, ni) =  exp2f(tensor(mi, ni) * softmax_scale - max_scaled);        
         }
     }
 }
