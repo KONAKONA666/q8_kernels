@@ -4,7 +4,7 @@
 #include <torch/extension.h>
 #include <torch/python.h>
 
-
+#include <cute/tensor.hpp>
 // NOTE:tensor malloc as device before we call
 // e.g. data.to("cuda") in python
 #define CHECK_CUDA(x)                                                          \
@@ -16,11 +16,21 @@
   CHECK_CONTIGUOUS(x)                                                           \
 
 
+#define OUTPUT_TYPE_SWITCH(OTYPE, ...)      \
+    if (OTYPE == at::ScalarType::BFloat16) {                                 \
+        using output_t = cute::bfloat16_t;                                               \
+        __VA_ARGS__;                                                              \
+    } else if(OTYPE == at::ScalarType::Float8_e4m3fn) {                             \
+        using output_t = cute::float_e4m3_t;                                          \
+        __VA_ARGS__;                                                              \
+    }                             
+template<typename output_t>
 void run_q8_gemm_bias(int8_t *A, int8_t *B,  float* bias, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream);
+template<typename output_t>
 void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream);
 
 
-torch::Tensor q8_mm(torch::Tensor a, torch::Tensor b, torch::Tensor a_scales, torch::Tensor b_scales, bool fuse_gelu){
+torch::Tensor q8_mm(torch::Tensor a, torch::Tensor b, torch::Tensor a_scales, torch::Tensor b_scales, bool fuse_gelu, std::optional<at::ScalarType>& out_type_){
 
     CHECK_INPUT(a);
     CHECK_INPUT(b);
@@ -62,17 +72,25 @@ torch::Tensor q8_mm(torch::Tensor a, torch::Tensor b, torch::Tensor a_scales, to
     
     at::cuda::CUDAGuard device_guard{(char)a.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
+    at::ScalarType out_type;
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = torch::kFloat8_e4m3fn;
+    }
 
     auto opts = a.options();
-    auto out = torch::empty({batch, m, n}, opts.dtype(torch::kFloat8_e4m3fn));
 
-    run_q8_gemm(a.data_ptr<int8_t>(), b.data_ptr<int8_t>(), out.data_ptr(), a_scales.data_ptr<float>(), b_scales.data_ptr<float>(), bs_a, bs_b, m, n, k, fuse_gelu, stream);
-
+    auto out = torch::empty({batch, m, n}, opts.dtype(out_type));
+    OUTPUT_TYPE_SWITCH(out_type, 
+        run_q8_gemm<output_t>(a.data_ptr<int8_t>(), b.data_ptr<int8_t>(), out.data_ptr(), a_scales.data_ptr<float>(), b_scales.data_ptr<float>(), bs_a, bs_b, m, n, k, fuse_gelu, stream);
+    );
+    
     return out;
 }
 
 
-torch::Tensor q8_mm_bias(torch::Tensor a, torch::Tensor b, torch::Tensor bias, torch::Tensor a_scales, torch::Tensor b_scales, bool fuse_gelu){
+torch::Tensor q8_mm_bias(torch::Tensor a, torch::Tensor b, torch::Tensor bias, torch::Tensor a_scales, torch::Tensor b_scales, bool fuse_gelu, std::optional<at::ScalarType>& out_type_){
 
     CHECK_INPUT(a);
     CHECK_INPUT(b);
@@ -118,14 +136,22 @@ torch::Tensor q8_mm_bias(torch::Tensor a, torch::Tensor b, torch::Tensor bias, t
     at::cuda::CUDAGuard device_guard{(char)a.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
 
-    auto opts = a.options();
-    auto out = torch::empty({batch, m, n}, opts.dtype(torch::kFloat8_e4m3fn));
+    at::ScalarType out_type;
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = torch::kFloat8_e4m3fn;
+    }
 
-    run_q8_gemm_bias(a.data_ptr<int8_t>(), b.data_ptr<int8_t>(), bias.data_ptr<float>(), out.data_ptr(), 
+    auto opts = a.options();
+
+    auto out = torch::empty({batch, m, n}, opts.dtype(out_type));
+    
+    OUTPUT_TYPE_SWITCH(out_type, 
+        run_q8_gemm_bias<output_t>(a.data_ptr<int8_t>(), b.data_ptr<int8_t>(), bias.data_ptr<float>(), out.data_ptr(), 
                 a_scales.data_ptr<float>(), b_scales.data_ptr<float>(), 
                 bs_a, bs_b, m, n, k, fuse_gelu, stream);
-
-    
+    );
 
     return out;
 }

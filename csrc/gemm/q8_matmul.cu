@@ -10,6 +10,24 @@
 
 using namespace cute;
 
+template<int BYTES> struct BytesToType {};
+template<> struct BytesToType<1> {
+    using Type = uint8_t;
+    static_assert(sizeof(Type) == 1);
+};
+
+template<> struct BytesToType<4> {
+    using Type = uint32_t;
+    static_assert(sizeof(Type) == 4);
+};
+
+template<> struct BytesToType<2> {
+    using Type = uint16_t;
+    static_assert(sizeof(Type) == 2);
+};
+
+
+
 inline __device__ float gelu_approximate(float x){
     constexpr float sqrthalfpi2 = 0.7978845608028653558798921198687637369517172623298693153318516593f;
     constexpr float factor = 0.044715f;
@@ -21,6 +39,39 @@ inline __device__ float gelu_erf(float x){
     // return 0.5f*x*(1.0f + tanhf(sqrthalfpi2*(x + factor*x*x*x)));
 }
 
+
+template <typename ToType, typename Fragment>
+inline __device__ auto convert_type_fp16(Fragment const &acc_fp32) {
+  using convert_type = std::conditional_t<
+                            std::is_same_v<ToType, cutlass::half_t>,
+                            half2,
+                            __nv_bfloat162
+                        >;
+  Tensor acc_fp16 = make_tensor<ToType>(shape(acc_fp32));
+  { 
+    
+    Tensor acc_fp32x2 = recast< float2>(acc_fp32);
+    Tensor acc_fp16x2 = recast<convert_type>(acc_fp16);
+    for (int i = 0; i < size(acc_fp32x2); ++i) { 
+        if constexpr(std::is_same<ToType, cutlass::half_t>::value){
+            acc_fp16x2(i) = __float2half2_rn(acc_fp32x2(i)); 
+        } else {
+            acc_fp16x2(i) = __float22bfloat162_rn(acc_fp32x2(i)); 
+        }
+    }
+  }
+  return acc_fp16;
+}
+
+// template <typename To_type, typename Engine, typename Layout>
+// __forceinline__ __device__ auto convert_type_fp16(Tensor<Engine, Layout> const &tensor) {
+//     using From_type = typename Engine::value_type;
+//     constexpr int numel = decltype(size(tensor))::value;
+//     cutlass::NumericArrayConverter<To_type, From_type, numel> convert_op;
+//     // HACK: this requires tensor to be "contiguous"
+//     auto frag = convert_op(*reinterpret_cast<const cutlass::Array<From_type, numel> *>(tensor.data()));
+//     return make_tensor(make_rmem_ptr<To_type>(&frag), tensor.layout());
+// }
 
 
 template<typename Fragment>
@@ -37,6 +88,7 @@ inline __device__ auto convert_fp32_fp8(Fragment const& fp32_fragment){
 
 
 template<bool Is_Even, bool fuse_gelu_activation, int BM, int BN, int BK, bool BATCH_A, bool BATCH_B, int KStages,
+        typename output_t,
         typename TiledMMA, typename G2SCopyA, typename G2SCopyB,
         typename SmemLayoutA, typename SmemLayoutB, typename SmemLayoutC,
 
@@ -56,7 +108,7 @@ template<bool Is_Even, bool fuse_gelu_activation, int BM, int BN, int BK, bool B
         typename R2SCopyAtomC, typename S2GCopyAtomC, typename S2GCopyC>
 __global__ void gemm_q8_kernel(const int8_t * Aptr, const int8_t * Bptr, 
                                  const float* A_scales, const float* B_scales,
-                                 float_e4m3_t*  Cptr, 
+                                 output_t*  Cptr, 
                                  int M,
                                  int N, int K, 
                                  int BATCH){
@@ -65,8 +117,9 @@ __global__ void gemm_q8_kernel(const int8_t * Aptr, const int8_t * Bptr,
 
     float *Ascale_shm = shm_data;
     float *BScale_shm = shm_data + cosize(SmemLayoutScaleA{});
+    output_t* Cshm = (output_t*)(shm_data + cosize(SmemLayoutScaleA{}) + cosize(SmemLayoutScaleA{}));
+
     int8_t *Ashm = (int8_t*)(shm_data + cosize(SmemLayoutScaleA{}) + cosize(SmemLayoutScaleA{}));
-    float_e4m3_t* Cshm = (float_e4m3_t*)(shm_data + cosize(SmemLayoutScaleA{}) + cosize(SmemLayoutScaleA{}));
     int8_t *Bshm = (int8_t*)(Ashm + cosize(SmemLayoutA{}));
 
     int idx = threadIdx.x;
@@ -278,7 +331,6 @@ __global__ void gemm_q8_kernel(const int8_t * Aptr, const int8_t * Bptr,
     auto a_scales_tv = AScaleTV{};
     auto b_scales_tv = BScaleTV{};
     
-    
 
     #pragma unroll
     for (size_t mma_m = 0; mma_m < size<1>(tCrD_fp32); mma_m++)
@@ -337,8 +389,13 @@ __global__ void gemm_q8_kernel(const int8_t * Aptr, const int8_t * Bptr,
         {
             for (size_t t = 0; t < repeat_k; t++)
             {   
-                auto fp8_fragment = convert_fp32_fp8(tCrC_r2s(_, i, t+k*repeat_k));                
-                cute::copy(r2s_tiled_copy_c, fp8_fragment, tCsC_r2s(_, 0, t));
+                if constexpr (std::is_same<output_t, float_e4m3_t>::value){
+                    auto fp8_fragment = convert_fp32_fp8(tCrC_r2s(_, i, t+k*repeat_k));                
+                    cute::copy(r2s_tiled_copy_c, fp8_fragment, tCsC_r2s(_, 0, t));
+                } else {
+                    auto fragment = convert_type_fp16<cute::bfloat16_t>(tCrC_r2s(_, i, t+k*repeat_k));
+                    cute::copy(r2s_tiled_copy_c, fragment, tCsC_r2s(_, 0, t));
+                }
             }
             __syncthreads();
             if constexpr (Is_Even){
@@ -353,6 +410,7 @@ __global__ void gemm_q8_kernel(const int8_t * Aptr, const int8_t * Bptr,
     }
 }
 
+template<typename output_t>
 void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream){
     
     int BATCH;
@@ -418,21 +476,30 @@ void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales
     using s2r_copy_traits_b = Copy_Traits<s2r_copy_op_b>;
     using s2r_copy_atom_b = Copy_Atom<s2r_copy_traits_b, int8_t>;
 
+    using fp8_swizzle = Swizzle<2, 4, 3>;
+    using fp16_swizzle = Swizzle<3, 3, 3>;
+
+    constexpr int CKmult = std::is_same<output_t, float_e4m3_t>::value ? 4 : 2;
+
+    
     using SmemLayoutC = decltype(
         composition(
-                    Swizzle<2, 4, 3>{}, 
-                    make_layout(make_shape(Int<MMA_WARP_M>{}, Int<MMA_WARP_N*Int<4>{}>{}), 
-                    make_stride(Int<MMA_WARP_N*Int<4>{}>{}, Int<1>{})))
+                    std::conditional_t<std::is_same<output_t, float_e4m3_t>::value, fp8_swizzle, fp16_swizzle>{},
+                    make_layout(make_shape(Int<MMA_WARP_M>{}, Int<MMA_WARP_N*Int<CKmult>{}>{}), 
+                    make_stride(Int<MMA_WARP_N*Int<CKmult>{}>{}, Int<1>{})))
     );
 
-    using R2SCopyAtomC = Copy_Atom<UniversalCopy<cute::uint16_t>, float_e4m3_t>;
-    using S2GCopyAtomC = Copy_Atom<UniversalCopy<cute::uint128_t>, float_e4m3_t>;
+    constexpr static int n_write_elems = 16 / sizeof(output_t);
+
+
+    using R2SCopyAtomC = Copy_Atom<UniversalCopy<typename BytesToType<2*sizeof(output_t)>::Type>, output_t>;
+    using S2GCopyAtomC = Copy_Atom<UniversalCopy<cute::uint128_t>, output_t>;
 
     using S2GCopyC =
         decltype(make_tiled_copy(S2GCopyAtomC{},
                                 make_layout(make_shape(Int<32>{}, Int<4>{}),
                                             make_stride(Int<4>{}, Int<1>{})),
-                                make_layout(make_shape(Int<1>{}, Int<16>{}))));
+                                make_layout(make_shape(Int<1>{}, Int<n_write_elems>{}))));
     
     int BX = (N + BN - 1) / BN;
     int BY = (M + BM - 1) / BM;
@@ -441,14 +508,6 @@ void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales
     dim3 block(size(MMA{}));
     dim3 grid(BX, BY, BZ);
 
-    static constexpr int shm_size_AB =
-        cute::cosize(SmemLayoutA{}) + cute::cosize(SmemLayoutB{});
-    static constexpr int shm_size_C = cute::cosize(SmemLayoutC{});
-    static constexpr int kShmSize =
-        cute::max(shm_size_AB, shm_size_C) * sizeof(cute::float_e4m3_t);
-
-    int shm_size = kShmSize;
-    
      
     using G2SScales_copy_op = SM80_CP_ASYNC_CACHEALWAYS<float>;
     using G2SScales_copy_traits = Copy_Traits<G2SScales_copy_op>;
@@ -504,10 +563,17 @@ void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales
                             >>;
     using I2TVBScale = decltype(right_inverse(BScaleTV{}));
 
+    static constexpr int shm_size_scales = cute::cosize(SmemLayoutScaleA{}) + cute::cosize(SmemLayoutScaleB{});
+    static constexpr int shm_size_AB = cute::cosize(SmemLayoutA{}) + cute::cosize(SmemLayoutB{});
+    static constexpr int shm_size_C = cute::cosize(SmemLayoutC{});
+    static constexpr int kShmSize = cute::max(shm_size_AB, shm_size_C*sizeof(output_t)) + shm_size_scales*sizeof(float);
+
+    int shm_size = kShmSize;
     bool is_even = M % BM == 0;
     BOOL_SWITCH(fuse_gelu, fuse_gelu_, 
         BOOL_SWITCH(is_even, Is_Even,
-            BATCH_SWITCH(BA, BB, auto kernel = &gemm_q8_kernel<Is_Even, fuse_gelu_, BM, BN, BK, BA_, BB_, KStages, MMA,
+            BATCH_SWITCH(BA, BB, auto kernel = &gemm_q8_kernel<Is_Even, fuse_gelu_, BM, BN, BK, BA_, BB_, KStages, output_t,
+                                                MMA,
                                                 G2SCopyA, G2SCopyB, 
                                                 SmemLayoutA, SmemLayoutB, SmemLayoutC, 
 
@@ -525,7 +591,10 @@ void run_q8_gemm(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales
                                                 R2SCopyAtomC, S2GCopyAtomC, S2GCopyC>;
                 cudaFuncSetAttribute(
                                 kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shm_size);
-                kernel<<<grid, block, shm_size, stream>>>((int8_t*)A, (int8_t*)B, A_scales, B_scales, (float_e4m3_t*)C, M, N, K, BATCH););
+                kernel<<<grid, block, shm_size, stream>>>((int8_t*)A, (int8_t*)B, A_scales, B_scales, (output_t*)C, M, N, K, BATCH););
         );
     );
 }
+
+template void run_q8_gemm<cutlass::float_e4m3_t>(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream);
+template void run_q8_gemm<cutlass::bfloat16_t>(int8_t *A, int8_t *B, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream);

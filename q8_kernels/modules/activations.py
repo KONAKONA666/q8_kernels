@@ -11,6 +11,6 @@ class GELU(nn.Module):
         super().__init__()
         self.proj = Q8Linear(dim_in, dim_out, bias=bias)
 
-    def forward(self, hidden_states):
-        hidden_states = self.proj(hidden_states, fuse_gelu=True)
+    def forward(self, hidden_states, out_dtype=None):
+        hidden_states = self.proj(hidden_states, fuse_gelu=True, out_dtype=out_dtype)
         return hidden_states

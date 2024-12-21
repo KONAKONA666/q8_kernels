@@ -13,5 +13,5 @@ class FeedForward(nn.Module):
         self.inner_dim = dim * mult
         self.act = GELU(dim, self.inner_dim, bias=bias)
         self.proj_down = Q8Linear(self.inner_dim, dim, bias=bias)
-    def forward(self, x):
-        return self.proj_down(self.act(x))
+    def forward(self, x, out_dtype=None):
+        return self.proj_down(self.act(x, out_dtype=out_dtype), out_dtype=out_dtype)

@@ -26,8 +26,8 @@ class Q8Linear(nn.Module):
 
         self.register_buffer("scales", torch.empty(out_features, device=device, dtype=torch.float))
 
-    def forward(self, x, x_scales=None, fuse_gelu=False):
-        return Q8F.linear.q8_linear(x, self.weight.data, self.bias.data, x_scales, self.scales, fuse_gelu)
+    def forward(self, x, x_scales=None, fuse_gelu=False, out_dtype=None):
+        return Q8F.linear.q8_linear(x, self.weight.data, self.bias.data, x_scales, self.scales, fuse_gelu, out_dtype)
 
 
     @classmethod

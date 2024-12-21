@@ -45,25 +45,25 @@ class Attention(nn.Module):
     
     def forward(self, hidden_states, 
                 freqs_cis=None, encoder_hidden_states=None, attention_mask=None, 
-                non_mm_precision=torch.bfloat16, apply_qk_hadamard=True):
+                non_mm_precision=torch.bfloat16, mm_out_dtype=None, apply_qk_hadamard=True):
         
         if attention_mask is not None and attention_mask.ndim > 1:
             attention_mask = attention_mask.argmin(-1).squeeze().int()
         
-        query = self.to_q(hidden_states)
+        query = self.to_q(hidden_states, out_dtype=mm_out_dtype)
         if self.qk_rms_norm:
             query = self.q_norm(query, non_mm_precision)
         
         if encoder_hidden_states is not None:
-            key = self.to_k(encoder_hidden_states)
+            key = self.to_k(encoder_hidden_states, out_dtype=mm_out_dtype)
             if self.qk_rms_norm:
                 key = self.k_norm(key, non_mm_precision)
-            value = self.to_v(encoder_hidden_states)
+            value = self.to_v(encoder_hidden_states, out_dtype=mm_out_dtype)
         else:
-            key = self.to_k(hidden_states)
+            key = self.to_k(hidden_states, out_dtype=mm_out_dtype)
             if self.qk_rms_norm:
                 key = self.k_norm(key, non_mm_precision)
-            value = self.to_v(hidden_states)
+            value = self.to_v(hidden_states, out_dtype=mm_out_dtype)
             if self.use_rope:
                 query = Q8F.rope.apply_rope(query, freqs_cis[0], freqs_cis[1], out_type=non_mm_precision)
                 key = Q8F.rope.apply_rope(key, freqs_cis[0], freqs_cis[1], out_type=non_mm_precision)
@@ -80,5 +80,5 @@ class Attention(nn.Module):
             batch_size, -1, self.num_heads * self.head_dim
         ).contiguous()
 
-        hidden_states = self.to_out(hidden_states)
+        hidden_states = self.to_out(hidden_states, out_dtype=mm_out_dtype)
         return hidden_states.to(non_mm_precision)

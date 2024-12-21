@@ -24,6 +24,7 @@ class LTXTransformerBlock(nn.Module):
                 attention_mask, 
                 encoder_hidden_states, encoder_attention_mask, 
                 timestep, 
+                mm_out_dtype=torch.bfloat16,
                 non_mm_precision=torch.bfloat16):
         
         num_ada_params = self.scale_shift_table.shape[0]
@@ -36,7 +37,7 @@ class LTXTransformerBlock(nn.Module):
         
         norm_hidden_states = self.norm1(hidden_states, non_mm_precision)
         norm_hidden_states = norm_hidden_states * (1 + scale_msa) + shift_msa
-        attn_output = self.attn1(norm_hidden_states, freqs_cis, None, attention_mask, non_mm_precision)
+        attn_output = self.attn1(norm_hidden_states, freqs_cis, None, attention_mask, non_mm_precision, mm_out_dtype)
         hidden_states = gate_msa * attn_output + hidden_states
     
         attn_output = self.attn2(
@@ -44,13 +45,14 @@ class LTXTransformerBlock(nn.Module):
             freqs_cis=freqs_cis,
             encoder_hidden_states=encoder_hidden_states,
             attention_mask=encoder_attention_mask,
-            non_mm_precision=non_mm_precision
+            non_mm_precision=non_mm_precision,
+            mm_out_dtype=mm_out_dtype
         )
         hidden_states = attn_output + hidden_states
 
         norm_hidden_states = self.norm2(hidden_states, non_mm_precision)
         norm_hidden_states = norm_hidden_states * (1 + scale_mlp) + shift_mlp
-        ff_output = self.ff(norm_hidden_states).to(non_mm_precision)
+        ff_output = self.ff(norm_hidden_states, out_dtype=mm_out_dtype).to(non_mm_precision)
         hidden_states = gate_mlp * ff_output + hidden_states
         
         return hidden_states

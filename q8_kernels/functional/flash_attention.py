@@ -9,6 +9,7 @@ from q8_kernels_cuda.flash_attention._C import flash_attention
 from .fast_hadamard import hadamard_transform
 
 
+
 def is_16bit(x) -> bool:
     return x.dtype == torch.float16 or x.dtype == torch.bfloat16
 
@@ -43,7 +44,9 @@ class FlashAttnFunc(torch.autograd.Function):
             v_tokens = v.shape[-1]
             v_tokens_pad = ((v_tokens + 15)//16)*16 - v_tokens
             v = torch.nn.functional.pad(v, (0, v_tokens_pad))
-        
+        if is_16bit(v):
+            v = v.to(torch.float8_e4m3fn)
+
         if apply_qk_hadamard:
             hd_scale = math.sqrt(1/q.shape[-1])
             q = hadamard_transform(q, scale=hd_scale * math.sqrt(softmax_scale), out_type=torch.float8_e4m3fn)
