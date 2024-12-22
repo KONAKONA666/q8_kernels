@@ -47,6 +47,8 @@ ext_modules.append(
             "csrc/gemm/q8_gemm_api.cpp",
             "csrc/gemm/q8_matmul_bias.cu",
             "csrc/gemm/q8_matmul.cu",
+            "csrc/gemm/fp8_matmul.cu",
+            "csrc/gemm/fp8_matmul_bias.cu",
         ],
         extra_compile_args={
             # add c compile flags
@@ -159,7 +161,7 @@ ext_modules.append(
                     "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
-                    "--use_fast_math",
+                    # "--use_fast_math",
 
                 ]
                 + generator_flag

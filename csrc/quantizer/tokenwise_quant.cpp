@@ -30,6 +30,18 @@
         AT_ERROR(#NAME, " not implemented for input type '", toString(ITYPE), "'"); \
     }
 
+#define DISPATCH_OTYPE_INT8_AND_FP8(OTYPE, NAME, ...)                                \
+    if (OTYPE == at::ScalarType::Char) {                                            \
+        using output_t = int8_t;                                                   \
+        __VA_ARGS__();                                                              \
+    } else if (OTYPE == at::ScalarType::Float8_e4m3fn) {                            \
+        using output_t = at::Float8_e4m3fn;                                          \
+        __VA_ARGS__();                                                              \
+    }                                                                               \
+    else {                                                                          \
+        AT_ERROR(#NAME, " not implemented for output type '", toString(OTYPE), "'");  \
+    }                                                                               \
+
 template<typename input_t, typename output_t>
 void quantizer_cuda(QuantizerParamsBase &params, cudaStream_t stream);
 
@@ -59,7 +71,7 @@ void set_quantizer_params(QuantizerParamsBase &params,
     
 }
 
-std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x) {
+std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x, std::optional<at::ScalarType>& out_type_) {
 
     TORCH_CHECK(x.is_cuda());
     const auto shapes_og = x.sizes();
@@ -71,9 +83,16 @@ std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x) {
     const auto sizes = x.sizes();
     const int batch_size = sizes[0];
     const int dim = x.size(1);
-
+    
+    at::ScalarType out_type;
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = torch::kInt8;
+    }
     auto opts = x.options();
-    at::Tensor out = torch::empty({batch_size, dim},  opts.dtype(torch::kInt8));
+    
+    at::Tensor out = torch::empty({batch_size, dim},  opts.dtype(out_type));
     at::Tensor out_scales = torch::empty({batch_size}, opts.dtype(torch::kFloat32));
 
     QuantizerParamsBase params;
@@ -81,9 +100,12 @@ std::vector<at::Tensor> tokenwise_quantize(at::Tensor &x) {
 
     at::cuda::CUDAGuard device_guard{(char)x.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
-   
+    // TODO: Test on windows machine
+    // using output_t = int8_t;
     DISPATCH_ITYPE_FLOAT_AND_HALF_AND_BF16_AND_FP8(x.scalar_type(), "tokenwise_quant", [&] {
-        quantizer_cuda<input_t, int8_t>(params, stream);
+        DISPATCH_OTYPE_INT8_AND_FP8(out.scalar_type(), "tokenwise_quant", [&] {
+            quantizer_cuda<input_t, output_t>(params, stream);
+        });
     });
     return {out.reshape(shapes_og), out_scales.reshape(torch::IntArrayRef(shapes_og.begin(), shapes_og.size()-1))};
 }

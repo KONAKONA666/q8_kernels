@@ -599,7 +599,6 @@ void run_fp8_gemm_bias(void *A, void *B,  float* bias, void *C, float* A_scales,
     );
 }
 
-
 template void run_fp8_gemm_bias<cute::float_e4m3_t>(void *A, void *B,  float* bias, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream);
 template void run_fp8_gemm_bias<cute::bfloat16_t>(void *A, void *B,  float* bias, void *C, float* A_scales, float* B_scales, int BA, int BB, int M, int N, int K, bool fuse_gelu, cudaStream_t stream);
 

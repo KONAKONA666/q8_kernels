@@ -217,7 +217,7 @@ torch::Tensor fp8_mm(torch::Tensor a, torch::Tensor b, torch::Tensor a_scales, t
 
     auto out = torch::empty({batch, m, n}, opts.dtype(out_type));
     OUTPUT_TYPE_SWITCH(out_type, 
-        run_fp8_gemm<output_t>(a.data_ptr<void>(), b.data_ptr<void>(), out.data_ptr(), a_scales.data_ptr<float>(), b_scales.data_ptr<float>(), bs_a, bs_b, m, n, k, fuse_gelu, stream);
+        run_fp8_gemm<output_t>(a.data_ptr(), b.data_ptr(), out.data_ptr(), a_scales.data_ptr<float>(), b_scales.data_ptr<float>(), bs_a, bs_b, m, n, k, fuse_gelu, stream);
     );
     
     return out;
@@ -282,7 +282,7 @@ torch::Tensor fp8_mm_bias(torch::Tensor a, torch::Tensor b, torch::Tensor bias, 
     auto out = torch::empty({batch, m, n}, opts.dtype(out_type));
     
     OUTPUT_TYPE_SWITCH(out_type, 
-        run_fp8_gemm_bias<output_t>(a.data_ptr<void>(), b.data_ptr<void>(), bias.data_ptr<float>(), out.data_ptr(), 
+        run_fp8_gemm_bias<output_t>(a.data_ptr(), b.data_ptr(), bias.data_ptr<float>(), out.data_ptr(), 
                 a_scales.data_ptr<float>(), b_scales.data_ptr<float>(), 
                 bs_a, bs_b, m, n, k, fuse_gelu, stream);
     );

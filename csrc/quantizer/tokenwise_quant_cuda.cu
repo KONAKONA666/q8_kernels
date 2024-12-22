@@ -6,6 +6,12 @@
 #include <torch/python.h>
 #include "tokenwise_quant.h"
 
+
+template<typename TYPE> struct QuantMax {};
+template<> struct QuantMax<int8_t> { static constexpr float value = 127.0; };
+template<> struct QuantMax<at::Float8_e4m3fn> { static constexpr float value = 448.0; };
+
+
 template<int kNThreads_, int dim, typename input_t_, typename output_t_>
 struct quantizer_kernel_traits {
 
@@ -126,11 +132,16 @@ void tokenwise_quantization_kernel(QuantizerParamsBase params) {
         thread_max = max(thread_max, smem_[i]);
     }
      __syncthreads();
-    float scale = 127.0f/thread_max;
+    float scale = QuantMax<output_t>::value/thread_max;
     #pragma unroll  
     for (size_t i = 0; i < ThreadElems; i++)
     {
-        x_vals[i] = round(x_vals[i] * scale);
+        if constexpr(std::is_same<output_t, int8_t>::value){
+            x_vals[i] = round(x_vals[i] * scale);
+        } // TODO: fix this
+        else {
+            x_vals[i] = x_vals[i] * scale;
+        }
     }
 
     *out_scales = 1/scale;
@@ -164,3 +175,8 @@ template void quantizer_cuda<float, int8_t>(QuantizerParamsBase &params, cudaStr
 template void quantizer_cuda<at::BFloat16, int8_t>(QuantizerParamsBase &params, cudaStream_t stream);
 template void quantizer_cuda<at::Half, int8_t>(QuantizerParamsBase &params, cudaStream_t stream);
 template void quantizer_cuda<at::Float8_e4m3fn, int8_t>(QuantizerParamsBase &params, cudaStream_t stream);
+
+template void quantizer_cuda<float, at::Float8_e4m3fn>(QuantizerParamsBase &params, cudaStream_t stream);
+template void quantizer_cuda<at::BFloat16, at::Float8_e4m3fn>(QuantizerParamsBase &params, cudaStream_t stream);
+template void quantizer_cuda<at::Half, at::Float8_e4m3fn>(QuantizerParamsBase &params, cudaStream_t stream);
+template void quantizer_cuda<at::Float8_e4m3fn, at::Float8_e4m3fn>(QuantizerParamsBase &params, cudaStream_t stream);
