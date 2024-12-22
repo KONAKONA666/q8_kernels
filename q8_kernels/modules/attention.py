@@ -79,6 +79,11 @@ class Attention(nn.Module):
                                                                 apply_qk_hadamard=apply_qk_hadamard)
         elif attn_type == 'torch':
             # attention mask: [batch] -> [batch, heads, 1, key]
+            
+            query = query.to(non_mm_precision)
+            key = key.to(non_mm_precision)
+            value = value.to(non_mm_precision)
+            
             if attention_mask is not None:
                 # Create position indices tensor [batch_size, seq_len]
                 positions = torch.arange(key.shape[2], device=query.device).expand(batch_size, -1)
