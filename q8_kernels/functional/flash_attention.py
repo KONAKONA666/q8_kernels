@@ -58,7 +58,6 @@ class FlashAttnFunc(torch.autograd.Function):
             if is_16bit(k):
                 k = k.to(torch.float8_e4m3fn)   
             o = flash_attention(q, k, v, softmax_scale, batch_mask)
-            
         return o[..., :head_size_og]
     
 

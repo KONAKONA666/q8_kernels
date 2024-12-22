@@ -45,9 +45,9 @@ class Attention(nn.Module):
     
     def forward(self, hidden_states, 
                 freqs_cis=None, encoder_hidden_states=None, attention_mask=None, 
-                non_mm_precision=torch.bfloat16, mm_out_dtype=None, apply_qk_hadamard=True):
+                non_mm_precision=torch.bfloat16, mm_out_dtype=None, apply_qk_hadamard=True, attn_type='q8_kernels'):
         
-        if attention_mask is not None and attention_mask.ndim > 1:
+        if attention_mask is not None and attention_mask.ndim > 1 and attn_type == 'q8_kernels':
             attention_mask = attention_mask.argmin(-1).squeeze().int()
         
         query = self.to_q(hidden_states, out_dtype=mm_out_dtype)
@@ -73,9 +73,28 @@ class Attention(nn.Module):
         key = key.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
 
-        hidden_states = Q8F.flash_attention.flash_attn_func(query, key, value, 
-                                                            batch_mask=attention_mask, 
-                                                            apply_qk_hadamard=apply_qk_hadamard)
+        if attn_type == 'q8_kernels':
+            hidden_states = Q8F.flash_attention.flash_attn_func(query, key, value, 
+                                                                batch_mask=attention_mask, 
+                                                                apply_qk_hadamard=apply_qk_hadamard)
+        elif attn_type == 'torch':
+            # attention mask: [batch] -> [batch, heads, 1, key]
+            if attention_mask is not None:
+                # Create position indices tensor [batch_size, seq_len]
+                positions = torch.arange(key.shape[2], device=query.device).expand(batch_size, -1)
+                # Compare with attention_mask [batch_size, 1] to create boolean mask
+                mask = positions < attention_mask.unsqueeze(-1)
+                # Convert to float mask with -inf for False values
+                _attention_mask = torch.where(mask, 0.0, float('-inf'))
+                # Reshape to [batch_size, 1, 1, seq_len] and expand to all heads
+                attention_mask = _attention_mask.unsqueeze(1).unsqueeze(1).expand(-1, self.num_heads, -1, -1).to(query.dtype)
+
+            hidden_states = torch.nn.functional.scaled_dot_product_attention(query, key, value, 
+                                                                            attn_mask=attention_mask, 
+                                                                            dropout_p=0.0, is_causal=False)
+        else:
+            raise ValueError(f"Invalid attention type: {attn_type}")
+        
         hidden_states = hidden_states.transpose(1, 2).reshape(
             batch_size, -1, self.num_heads * self.head_dim
         ).contiguous()
