@@ -21,7 +21,7 @@ struct rmsnorm_kernel_traits {
     static constexpr int kNThreads = kNThreads_;
     static constexpr int kNBytes_input = sizeof(input_t);
     static_assert(kNBytes_input == 1 || kNBytes_input == 2 || kNBytes_input == 4);
-    static constexpr int ThreadElems = 16;
+    static constexpr int ThreadElems = kNBytes_input == 1 ? 16 : kNBytes_input == 2 ? 8 : 4;
     static_assert(ThreadElems * kNThreads == dim);
 };
 
@@ -166,7 +166,6 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
             x_vals[i] = (x_vals[i] * norm);
         }
     }
-    
     store_output<ThreadElems, vec_t, output_t>(out, x_vals);
 }
 
@@ -188,9 +187,15 @@ void rms_norm_launch(RMSNormsParamsBase &params, cudaStream_t stream) {
 template<bool norm_affine, typename input_t, typename output_t>
 void  rms_norm_cuda(RMSNormsParamsBase &params, cudaStream_t stream) {
     if (params.dim == 2048) {
-        rms_norm_launch<128, 2048, norm_affine, input_t, output_t>(params, stream);
+        static constexpr int kNBytes_input = sizeof(input_t);
+        static constexpr int ThreadElems = kNBytes_input == 1 ? 16 : kNBytes_input == 2 ? 8 : 4;
+        static constexpr int kNThreads = 2048/ThreadElems;
+        rms_norm_launch<kNThreads, 2048, norm_affine, input_t, output_t>(params, stream);
     } else if(params.dim == 8192){
-        rms_norm_launch<512, 8192, norm_affine, input_t, output_t>(params, stream);  
+        static constexpr int kNBytes_input = sizeof(input_t);
+        static constexpr int ThreadElems = kNBytes_input == 1 ? 16 : kNBytes_input == 2 ? 8 : 4;
+        static constexpr int kNThreads = 8192/ThreadElems;
+        rms_norm_launch<kNThreads, 8192, norm_affine, input_t, output_t>(params, stream);  
     }
 }
 

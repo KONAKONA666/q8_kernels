@@ -20,7 +20,7 @@ struct gelu_backward_kernel_traits {
     static constexpr int kNThreads = kNThreads_;
     static constexpr int kNBytes_input = sizeof(input_t);
     static_assert(kNBytes_input == 1 || kNBytes_input == 2 || kNBytes_input == 4);
-    static constexpr int ThreadElems = 16;
+    static constexpr int ThreadElems = kNBytes_input == 1 ? 16 : kNBytes_input == 2 ? 8 : 4;
     static_assert(ThreadElems * kNThreads == dim);
 };
 
@@ -118,9 +118,15 @@ void gelu_backward_launch(GELUBackwardParamsBase &params, cudaStream_t stream) {
 template<typename input_t, typename output_t>
 void  gelu_backward_cuda(GELUBackwardParamsBase &params, cudaStream_t stream) {
     if (params.dim == 2048) {
-        gelu_backward_launch<128, 2048, input_t, output_t>(params, stream);
+         static constexpr int kNBytes_input = sizeof(input_t);
+        static constexpr int ThreadElems = kNBytes_input == 1 ? 16 : kNBytes_input == 2 ? 8 : 4;
+        static constexpr int kNThreads = 2048/ThreadElems;
+        gelu_backward_launch<kNThreads, 2048, input_t, output_t>(params, stream);
     } else if(params.dim == 8192){
-        gelu_backward_launch<512, 8192, input_t, output_t>(params, stream);  
+        static constexpr int kNBytes_input = sizeof(input_t);
+        static constexpr int ThreadElems = kNBytes_input == 1 ? 16 : kNBytes_input == 2 ? 8 : 4;
+        static constexpr int kNThreads = 8192/ThreadElems;
+        gelu_backward_launch<kNThreads, 8192, input_t, output_t>(params, stream);  
     }
 }
 
