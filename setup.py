@@ -145,7 +145,8 @@ ext_modules.append(
             "csrc/fast_hadamard/fast_hadamard_transform_cuda.cu",
 
             "csrc/ops/gelu_act.cpp",
-            "csrc/ops/gelu_backward_cuda.cu"
+            "csrc/ops/gelu_backward_cuda.cu",
+            "csrc/ops/gelu_forward_cuda.cu"
         ],
           extra_compile_args={
             # add c compile flags
@@ -164,7 +165,7 @@ ext_modules.append(
                     "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
-                    # "--use_fast_math",
+                    "--use_fast_math",
 
                 ]
                 + generator_flag
