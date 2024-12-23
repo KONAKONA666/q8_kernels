@@ -162,6 +162,7 @@ at::Tensor rms_norm_backward(at::Tensor &x_normed, at::Tensor &x_norms, at::Tens
     const int dim_og = x_normed.size(-1);
 
     x_normed = x_normed.reshape({-1, dim_og});
+    x_norms = x_norms.reshape({-1});
     grad_out = grad_out.reshape({-1, dim_og});
     
     if (x_normed.stride(-1) != 1) { x_normed = x_normed.contiguous(); }

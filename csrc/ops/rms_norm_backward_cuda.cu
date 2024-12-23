@@ -101,14 +101,14 @@ void rms_norm_backward_kernel(RMSNormsBackwardParamsBase params) {
         load_input<ThreadElems, weights_t, vec_t>(weights, weights_vals);
     }
     float row_norm = x_norms[0];
-    float coef = 0.5f / params.dim;
+    float coef = 1.0f / (2.0f * params.dim);
     #pragma unroll
     for (size_t i = 0; i < ThreadElems; i++)
     {
         if constexpr (norm_affine){
-            x_vals[i] = grad_out_vals[i] * (weights_vals[i] * row_norm - coef * x_vals[i])/(row_norm * row_norm);
+            x_vals[i] = grad_out_vals[i] * (weights_vals[i]*row_norm - x_vals[i]*row_norm*coef*row_norm); 
         } else {
-            x_vals[i] = grad_out_vals[i] * (row_norm - coef * x_vals[i])/(row_norm * row_norm);
+            x_vals[i] = grad_out_vals[i] * (row_norm - x_vals[i]*row_norm*coef*row_norm);
         }
     }
 
