@@ -137,6 +137,7 @@ ext_modules.append(
             
             "csrc/ops/rms_norm.cpp",
             "csrc/ops/rms_norm_cuda.cu",
+            "csrc/ops/rms_norm_backward_cuda.cu",
 
             "csrc/ops/fma.cpp",
             "csrc/ops/fma_cuda.cu",

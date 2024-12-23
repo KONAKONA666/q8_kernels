@@ -31,6 +31,8 @@
 
 template<bool norm_affine, typename input_t, typename output_t>
 void  rms_norm_cuda(RMSNormsParamsBase &params, cudaStream_t stream);
+template<bool norm_affine, typename input_t, typename output_t>
+void  rms_norm_backward_cuda(RMSNormsBackwardParamsBase &params, cudaStream_t stream);
 
 
 void set_rms_norm_params(RMSNormsParamsBase &params,
@@ -64,6 +66,39 @@ void set_rms_norm_params(RMSNormsParamsBase &params,
     params.out_scales_stride = out_scales.stride(0);
 }
 
+void set_rms_norm_backward_params(RMSNormsBackwardParamsBase &params,
+                         const size_t batch,
+                         const size_t dim,
+                         
+                         const at::Tensor x_normed,
+                         const at::Tensor x_norms,
+                         const at::Tensor grad_out,
+                         const at::Tensor weights,
+                         const at::Tensor out,
+                         bool norm_affine
+                         ) {
+    
+    memset(&params, 0, sizeof(params));
+
+    params.batch = batch;
+    params.dim = dim;
+
+    params.x_normed_ptr = x_normed.data_ptr();
+    params.x_norms_ptr = x_norms.data_ptr();
+    params.grad_out_ptr = grad_out.data_ptr();
+
+    if(norm_affine){
+        params.weights_ptr = weights.data_ptr();
+    } else {
+        params.weights_ptr = nullptr;
+    }
+    params.out_ptr = out.data_ptr();
+
+    params.x_normed_batch_stride = x_normed.stride(0);
+    params.x_norms_batch_stride = x_norms.stride(0);
+    params.grad_out_batch_stride = grad_out.stride(0);
+    params.out_batch_stride = out.stride(0);
+}
 
 std::vector<at::Tensor> rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::optional<at::ScalarType>& out_type_) {
     auto input_type = x.scalar_type();
@@ -116,5 +151,61 @@ std::vector<at::Tensor> rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weigh
         );
     );    
     return {out.reshape(shapes_og), out_scales.reshape(torch::IntArrayRef(shapes_og.begin(), shapes_og.size()-1))};
+}
+
+
+at::Tensor rms_norm_backward(at::Tensor &x_normed, at::Tensor &x_norms, at::Tensor &grad_out, c10::optional<at::Tensor>& weights_, std::optional<at::ScalarType>& out_type_) {
+    auto input_type = x_normed.scalar_type();
+    TORCH_CHECK(x_normed.is_cuda());
+
+    const auto shapes_og = x_normed.sizes();    
+    const int dim_og = x_normed.size(-1);
+
+    x_normed = x_normed.reshape({-1, dim_og});
+    grad_out = grad_out.reshape({-1, dim_og});
+    
+    if (x_normed.stride(-1) != 1) { x_normed = x_normed.contiguous(); }
+    if (grad_out.stride(-1) != 1) { grad_out = grad_out.contiguous(); }
+
+    const auto sizes = x_normed.sizes();
+    const int batch_size = sizes[0];
+
+    CHECK_SHAPE(x_normed, batch_size, dim_og);
+    TORCH_CHECK(x_normed.stride(1) == 1);
+
+    const int dim = x_normed.size(1);
+
+    at::ScalarType out_type;
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = x_normed.scalar_type();
+    }
+  
+    at::Tensor out = torch::empty(x_normed.sizes(), x_normed.options().dtype(out_type));
+    at::Tensor weights;
+    bool norm_affine = false;
+    if(weights_.has_value()){
+        weights = weights_.value();
+        norm_affine = true;
+        TORCH_CHECK(weights.scalar_type() == at::ScalarType::Float && weights.is_cuda(), "rms norm: weights error");
+    }
+
+    RMSNormsBackwardParamsBase params;
+    set_rms_norm_backward_params(params, batch_size, dim, x_normed, x_norms, grad_out, weights, out, norm_affine);
+
+    at::cuda::CUDAGuard device_guard{(char)x_normed.get_device()};
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+    
+    OTYPE_SWITCH(out_type, 
+        INPUT_TYPE_SWITCH(input_type, 
+            if (norm_affine){ 
+                rms_norm_backward_cuda<true, input_t, output_t>(params, stream); 
+            } else {    
+                rms_norm_backward_cuda<false, input_t, output_t>(params, stream); 
+            } 
+        );
+    );    
+    return out.reshape(shapes_og);
 }
 
