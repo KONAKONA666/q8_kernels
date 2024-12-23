@@ -30,6 +30,8 @@
 
 template<typename input_t, typename output_t>
 void  rope_cuda(RopeParamsBase &params, cudaStream_t stream);
+template<typename input_t, typename output_t>
+void  rope_backward_cuda(RopeBackwardParamsBase &params, cudaStream_t stream);
 
 
 void set_rope_params(RopeParamsBase &params,
@@ -60,6 +62,36 @@ void set_rope_params(RopeParamsBase &params,
     params.cos_freq_batch_stride = cos_freqs.stride(0);
     params.sin_freq_batch_stride = sin_freqs.stride(0);
 }
+
+void set_rope_backward_params(RopeBackwardParamsBase &params,
+                         const size_t batch,
+                         const size_t dim,
+                         
+                         const at::Tensor grad_out,
+                         const at::Tensor cos_freqs,
+                         const at::Tensor sin_freqs,
+                         const at::Tensor out
+                         
+                         ) {
+
+    memset(&params, 0, sizeof(params));
+
+    params.batch = batch;
+    params.dim = dim;
+  
+    params.grad_out_ptr = grad_out.data_ptr();
+    params.out_ptr = out.data_ptr();
+    
+    params.cos_freq = cos_freqs.data_ptr();
+    params.sin_freq = sin_freqs.data_ptr();
+
+    params.grad_out_batch_stride = grad_out.stride(0);
+    params.out_batch_stride = out.stride(0);
+
+    params.cos_freq_batch_stride = cos_freqs.stride(0);
+    params.sin_freq_batch_stride = sin_freqs.stride(0);
+}
+
 
 at::Tensor rope(at::Tensor &x, at::Tensor& cos_freqs, at::Tensor& sin_freqs, std::optional<at::ScalarType>& out_type_) {
     auto input_type = x.scalar_type();
@@ -107,6 +139,60 @@ at::Tensor rope(at::Tensor &x, at::Tensor& cos_freqs, at::Tensor& sin_freqs, std
     HOTYPE_SWITCH(out_type, 
         HINPUT_TYPE_SWITCH(x.scalar_type(), 
             rope_cuda<input_t, output_t>(params, stream);
+        );
+    );    
+
+    return out.reshape(shapes_og);
+}
+
+
+
+at::Tensor rope_backward(at::Tensor &grad_out, at::Tensor& cos_freqs, at::Tensor& sin_freqs, std::optional<at::ScalarType>& out_type_) {
+    auto input_type = grad_out.scalar_type();
+    auto freq_type = cos_freqs.scalar_type();
+   
+    TORCH_CHECK(freq_type == at::ScalarType::Float);
+
+    TORCH_CHECK(grad_out.is_cuda());
+    TORCH_CHECK(cos_freqs.is_cuda());
+    TORCH_CHECK(sin_freqs.is_cuda());
+
+    TORCH_CHECK(cos_freqs.sizes() == grad_out.sizes());
+    
+
+    const auto shapes_og = grad_out.sizes();    
+    const int dim_og = grad_out.size(-1);
+
+    grad_out = grad_out.reshape({-1, dim_og});
+    cos_freqs = cos_freqs.reshape({-1, dim_og});
+    sin_freqs = sin_freqs.reshape({-1, dim_og});
+
+    if (grad_out.stride(-1) != 1) { grad_out = grad_out.contiguous(); }
+    
+    const auto sizes = grad_out.sizes();
+    const int batch_size = sizes[0];
+
+    CHECK_SHAPE(grad_out, batch_size, dim_og);
+    TORCH_CHECK(grad_out.stride(1) == 1);
+    const int dim = grad_out.size(1);
+
+    at::ScalarType out_type;
+    if (out_type_.has_value()){
+        out_type = out_type_.value();
+    } else {
+        out_type = grad_out.scalar_type();
+    }
+    at::Tensor out = torch::empty(grad_out.sizes(), grad_out.options().dtype(out_type));
+    
+    RopeBackwardParamsBase params;
+    set_rope_backward_params(params, batch_size, dim, grad_out, cos_freqs, sin_freqs, out);
+
+    at::cuda::CUDAGuard device_guard{(char)grad_out.get_device()};
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+    
+    HOTYPE_SWITCH(out_type, 
+        HINPUT_TYPE_SWITCH(grad_out.scalar_type(), 
+            rope_backward_cuda<input_t, output_t>(params, stream);
         );
     );    
 

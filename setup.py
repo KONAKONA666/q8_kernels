@@ -134,7 +134,7 @@ ext_modules.append(
             
             "csrc/ops/rope.cpp",
             "csrc/ops/rope_cuda.cu",
-            
+            "csrc/ops/rope_backward_cuda.cu",
             "csrc/ops/rms_norm.cpp",
             "csrc/ops/rms_norm_cuda.cu",
             "csrc/ops/rms_norm_backward_cuda.cu",
