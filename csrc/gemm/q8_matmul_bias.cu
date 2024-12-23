@@ -333,7 +333,6 @@ __global__ void gemm_q8_kernel_bias(const int8_t * Aptr, const int8_t * Bptr, co
     auto a_scales_tv = AScaleTV{};
     auto b_scales_tv = BScaleTV{};
     
-    
 
     #pragma unroll
     for (size_t mma_m = 0; mma_m < size<1>(tCrD_fp32); mma_m++)
@@ -352,7 +351,7 @@ __global__ void gemm_q8_kernel_bias(const int8_t * Aptr, const int8_t * Bptr, co
         tCrBias(1, mma_n, 0) = sBias(b_scales_tv(idx, make_coord(1, mma_n)));
     }
     
-
+    
     for (size_t mma_m = 0; mma_m < size<1>(tCrD_fp32); mma_m++)
     {
         for (size_t mma_n = 0; mma_n < size<2>(tCrD_fp32); mma_n++)
@@ -368,7 +367,6 @@ __global__ void gemm_q8_kernel_bias(const int8_t * Aptr, const int8_t * Bptr, co
                 tCrD_fp32(_2{}, mma_m, mma_n) = tCrD_fp32(_2{}, mma_m, mma_n) * (tCrAscales(_2{}, mma_m, _0{}) * tCrBscales(_2{}, mma_n, _0{})) + tCrBias(_2{}, mma_n, _0{});
                 tCrD_fp32(_3{}, mma_m, mma_n) = tCrD_fp32(_3{}, mma_m, mma_n) * (tCrAscales(_3{}, mma_m, _0{}) * tCrBscales(_3{}, mma_n, _0{})) + tCrBias(_3{}, mma_n, _0{});
             }
-           
         }
     }
 

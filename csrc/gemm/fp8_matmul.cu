@@ -358,8 +358,7 @@ __global__ void gemm_fp8_kernel(const float_e4m3_t * Aptr, const float_e4m3_t * 
                 tCrD_fp32(_1{}, mma_m, mma_n) = tCrD_fp32(_1{}, mma_m, mma_n) * (tCrAscales(_1{}, mma_m, _0{}) * tCrBscales(_1{}, mma_n, _0{}));
                 tCrD_fp32(_2{}, mma_m, mma_n) = tCrD_fp32(_2{}, mma_m, mma_n) * (tCrAscales(_2{}, mma_m, _0{}) * tCrBscales(_2{}, mma_n, _0{}));
                 tCrD_fp32(_3{}, mma_m, mma_n) = tCrD_fp32(_3{}, mma_m, mma_n) * (tCrAscales(_3{}, mma_m, _0{}) * tCrBscales(_3{}, mma_n, _0{}));
-            }
-           
+            }  
         }
     }
 

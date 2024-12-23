@@ -142,7 +142,10 @@ ext_modules.append(
             "csrc/ops/fma_cuda.cu",
 
             "csrc/fast_hadamard/fast_hadamard_transform.cpp",
-            "csrc/fast_hadamard/fast_hadamard_transform_cuda.cu"
+            "csrc/fast_hadamard/fast_hadamard_transform_cuda.cu",
+
+            "csrc/ops/gelu_act.cpp",
+            "csrc/ops/gelu_backward_cuda.cu"
         ],
           extra_compile_args={
             # add c compile flags
