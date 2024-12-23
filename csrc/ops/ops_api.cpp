@@ -9,7 +9,7 @@
 
 
 at::Tensor rope(at::Tensor &x, at::Tensor& cos_freqs, at::Tensor& sin_freqs, std::optional<at::ScalarType>& out_type_); 
-at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, c10::optional<at::ScalarType>& out_type_);
+std::vector<at::Tensor> rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::optional<at::ScalarType>& out_type_);
 at::Tensor fma_8bit(at::Tensor &x, at::Tensor& y, at::Tensor& z, float scale_add);
 at::Tensor fast_hadamard_transform(at::Tensor &x, float scale, std::optional<at::ScalarType>& out_type_);
 at::Tensor gelu_backward(at::Tensor &x, at::Tensor& grad_output, std::optional<at::ScalarType>& out_type_);

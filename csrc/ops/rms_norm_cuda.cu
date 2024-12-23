@@ -123,7 +123,7 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
 
     output_t *out = reinterpret_cast<output_t *>(params.out_ptr) + batch_id * params.out_batch_stride;
 
-
+    float *out_scales = reinterpret_cast<float *>(params.out_scales_ptr) + batch_id;
     float oneoverdim = 1.0f/params.dim;
     float x_vals[ThreadElems];
     float weights_vals[ThreadElems];
@@ -166,6 +166,7 @@ void rms_norm_kernel(RMSNormsParamsBase params) {
             x_vals[i] = (x_vals[i] * norm);
         }
     }
+    *out_scales = norm;
     store_output<ThreadElems, vec_t, output_t>(out, x_vals);
 }
 

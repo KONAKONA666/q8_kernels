@@ -40,6 +40,7 @@ void set_rms_norm_params(RMSNormsParamsBase &params,
                          const at::Tensor x,
                          const at::Tensor out,
                          const at::Tensor weights,
+                         const at::Tensor out_scales,
                          bool norm_affine
                          ) {
 
@@ -50,17 +51,21 @@ void set_rms_norm_params(RMSNormsParamsBase &params,
   
     params.x_ptr = x.data_ptr();
     params.out_ptr = out.data_ptr();
+    params.out_scales_ptr = out_scales.data_ptr();
+
     if(norm_affine){
         params.weights_ptr = weights.data_ptr();
     } else {
         params.weights_ptr = nullptr;
     }
-    
+
     params.x_batch_stride = x.stride(0);
     params.out_batch_stride = out.stride(0);
+    params.out_scales_stride = out_scales.stride(0);
 }
 
-at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::optional<at::ScalarType>& out_type_) {
+
+std::vector<at::Tensor> rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::optional<at::ScalarType>& out_type_) {
     auto input_type = x.scalar_type();
     TORCH_CHECK(x.is_cuda());
 
@@ -86,6 +91,7 @@ at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::opt
     }
   
     at::Tensor out = torch::empty(x.sizes(), x.options().dtype(out_type));
+    at::Tensor out_scales = torch::empty({batch_size}, x.options().dtype(torch::kFloat32));
     at::Tensor weights;
     bool norm_affine = false;
     if(weights_.has_value()){
@@ -95,7 +101,7 @@ at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::opt
     }
 
     RMSNormsParamsBase params;
-    set_rms_norm_params(params, batch_size, dim, x, out, weights, norm_affine);
+    set_rms_norm_params(params, batch_size, dim, x, out, weights, out_scales, norm_affine);
 
     at::cuda::CUDAGuard device_guard{(char)x.get_device()};
     auto stream = at::cuda::getCurrentCUDAStream().stream();
@@ -109,6 +115,6 @@ at::Tensor rms_norm(at::Tensor &x, c10::optional<at::Tensor>& weights_, std::opt
             } 
         );
     );    
-    return out.reshape(shapes_og);
+    return {out.reshape(shapes_og), out_scales.reshape(torch::IntArrayRef(shapes_og.begin(), shapes_og.size()-1))};
 }
 
