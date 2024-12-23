@@ -166,7 +166,7 @@ ext_modules.append(
                     "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
-                    "--use_fast_math",
+                    # "--use_fast_math",
 
                 ]
                 + generator_flag
