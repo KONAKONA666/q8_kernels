@@ -127,7 +127,7 @@ class FP8LinearFunc(torch.autograd.Function):
 
         mm_func = fp8_mm_bias if bias is not None else fp8_mm
         mm_args = (a, b, bias, scale_a, scale_b, False, out_dtype) if bias is not None else (a, b, scale_a, scale_b, False, out_dtype)
-        ctx.save_for_backward(a, b, scale_a, scale_b)
+        ctx.save_for_backward(b, scale_b) # TODO: dW, dBias
         ctx.out_dtype = out_dtype
         ctx.use_hadamard = use_hadamard
         
@@ -136,7 +136,8 @@ class FP8LinearFunc(torch.autograd.Function):
     
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        a, b, scale_a, scale_b = ctx.saved_tensors
+        # TODO: dW, dBias
+        b, scale_b = ctx.saved_tensors
         
         quant_fn_w = lambda x: quantize_fp8(hadamard_transform(x).T) if ctx.use_hadamard else quantize_fp8(x)
         
