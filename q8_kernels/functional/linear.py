@@ -14,7 +14,10 @@ from .fast_hadamard import hadamard_transform
 from .quantizer import quantize, quantize_fp8
 
 def is_16bit(x) -> bool:
-    return x.dtype == torch.float16 or x.dtype == torch.bfloat16
+    if hasattr(x, 'dtype'):
+        return x.dtype == torch.float16 or x.dtype == torch.bfloat16
+    else:
+        return x == torch.float16 or x == torch.bfloat16
 
 class Q8LinearFunc(torch.autograd.Function):
     @staticmethod
@@ -65,7 +68,6 @@ class Q8LinearLora(torch.autograd.Function):
         # r is small so another mma.sync at the endis not a big deal
         mm_func = q8_mm_bias if bias is not None else q8_mm
         mm_args = (a_quant, b, bias, scale_a, scale_b, False, out_dtype) if bias is not None else (a_quant, b, scale_a, scale_b, False, out_dtype)
-        
         lora_y = torch.nn.functional.linear(torch.nn.functional.linear(a, lora_a), lora_b)
         o = mm_func(*mm_args) + lora_y
         
@@ -98,6 +100,7 @@ class Q8LinearLora(torch.autograd.Function):
         
         grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
         grad_out_lora_b  = grad_output @ lora_b # [b, s, d] @ [d, r] -> [b, s, r]
+        
         grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
         
         grad_lora_a = grad_out_lora_b.transpose(-1, -2) @ a # [b, r, s] @ [b, s, h] -> [b, r, h] : tflops = 2*b*r*h*s 
@@ -105,6 +108,40 @@ class Q8LinearLora(torch.autograd.Function):
         
         return grad_x, None, None, None, None, grad_lora_a, grad_lora_b, None, None, None
 
+
+class FP8LinearFunc(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor], scale_a: Optional[torch.Tensor], scale_b:Optional[torch.Tensor], out_dtype: Optional[torch.dtype]) -> torch.Tensor:
+        assert (is_16bit(a) and scale_a is None) or (a.dtype == torch.float8_e4m3fn and scale_a is not None), "FP8LinearFunc: a dtype missmatch"
+        assert (is_16bit(b) and scale_b is None) or (b.dtype == torch.float8_e4m3fn and scale_b is not None), "FP8LinearFunc: b dtype missmatch"
+        assert a.shape[-1] == b.shape[-1], "FP8LinearFunc: mnk missmatch"
+        assert bias is None or bias.dtype == torch.float, "FP8LinearFunc: bias must be in fp32"
+        assert is_16bit(out_dtype), "FP8LinearFunc: out_dtype must be in 16bit, FIXME: LATER MAYBE"
+        if is_16bit(a):
+            a, scale_a = quantize_fp8(a)
+        if is_16bit(b):
+            b, scale_b = quantize_fp8(b)
+
+        mm_func = fp8_mm_bias if bias is not None else fp8_mm
+        mm_args = (a, b, bias, scale_a, scale_b, False, out_dtype) if bias is not None else (a, b, scale_a, scale_b, False, out_dtype)
+        ctx.save_for_backward(a, b, scale_a, scale_b)
+        ctx.out_dtype = out_dtype
+        return mm_func(*mm_args)
+    
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        a, b, scale_a, scale_b = ctx.saved_tensors
+        grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
+        w = (b.to(ctx.out_dtype) * scale_b[:, None]).T
+        w_fp8, w_scales = quantize_fp8(w)
+        grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, ctx.out_dtype)
+        return grad_x, None, None, None, None, None
+
+
+def fp8_linear(a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor]=None, 
+                   scale_a: Optional[torch.Tensor]=None, scale_b:Optional[torch.Tensor]=None, 
+                   out_dtype: Optional[torch.dtype]=None) -> torch.Tensor:
+    return FP8LinearFunc.apply(a, b, bias, scale_a, scale_b, out_dtype)
 
 def q8_linear_lora(a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor]=None, 
                    scale_a: Optional[torch.Tensor]=None, scale_b:Optional[torch.Tensor]=None, 

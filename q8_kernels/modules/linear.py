@@ -95,3 +95,32 @@ class Q8LinearLora(nn.Module):
         if linear.bias is not None:
             layer.bias.data = linear.bias.data.float()
         return layer
+
+
+class FP8Linear(nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None):
+        super().__init__()
+        self.weight = nn.Parameter(torch.empty(out_features, in_features, device=device, dtype=torch.float8_e4m3fn), requires_grad=False)
+        if bias:
+            self.bias = nn.Parameter(torch.empty(out_features, device=device, dtype=torch.float), requires_grad=False)
+        else:
+            self.register_parameter("bias", None)
+
+        self.register_buffer("scales", torch.empty(out_features, device=device, dtype=torch.float))
+
+    def forward(self, x, x_scales=None):
+        return Q8F.linear.fp8_linear(x, self.weight.data, self.bias.data if self.bias is not None else None, 
+                                     x_scales, self.scales, 
+                                     x.dtype)
+
+    @classmethod
+    def from_linear(cls, linear: nn.Linear, force_cuda=True):
+        assert linear.weight.data.is_cuda or force_cuda, "input linear layer must be in cuda device"
+        assert is_16bit(linear.weight.data)
+        layer = cls(linear.in_features, linear.out_features, linear.bias is not None, linear.weight.device)
+        w_quant, w_scale = Q8F.quantizer.quantize_fp8(linear.weight.data.cuda() if force_cuda else linear.weight.data)
+        layer.weight.data = w_quant
+        layer.scales.data = w_scale
+        if linear.bias is not None:
+            layer.bias.data = linear.bias.data.float()
+        return layer
