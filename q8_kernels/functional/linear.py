@@ -40,7 +40,8 @@ class Q8LinearLora(torch.autograd.Function):
     def forward(ctx, a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor], 
                      scale_a: Optional[torch.Tensor], scale_b:Optional[torch.Tensor], 
                      lora_a: Optional[torch.Tensor], lora_b: Optional[torch.Tensor],
-                     fuse_gelu:bool, out_dtype: Optional[torch.dtype]
+                     fuse_gelu:bool, use_hadamard:bool, 
+                     out_dtype: Optional[torch.dtype]
                 ) -> torch.Tensor:
         assert ((a.dtype == torch.float8_e4m3fn or is_16bit(a)) and scale_a is None) or (a.dtype == torch.int8 and scale_a is not None), "Q8LinearFuncLora: a dtype missmatch"
         assert ((b.dtype == torch.float8_e4m3fn or is_16bit(b)) and scale_b is None) or (b.dtype == torch.int8 and scale_b is not None), "Q8LinearFuncLora: b dtype missmatch"
@@ -58,12 +59,13 @@ class Q8LinearLora(torch.autograd.Function):
         
         ctx.fuse_gelu = fuse_gelu
         ctx.out_dtype = out_dtype
+        ctx.use_hadamard = use_hadamard
         # TODO: make this more efficient by fusing gelu in to lora
         # maybe pass a@lora_a[b, s, r] to mm func and then in epilogue call mma.sync for fp16 with fp32 accumulate
         # r is small so another mma.sync at the endis not a big deal
         mm_func = q8_mm_bias if bias is not None else q8_mm
         mm_args = (a_quant, b, bias, scale_a, scale_b, False, out_dtype) if bias is not None else (a_quant, b, scale_a, scale_b, False, out_dtype)
-        lora_y = torch.functional.linear(torch.functional.linear(a, lora_a), lora_b)
+        lora_y = torch.nn.functional.linear(torch.nn.functional.linear(a, lora_a), lora_b)
         o = mm_func(*mm_args) + lora_y
         
         if fuse_gelu:
@@ -85,28 +87,34 @@ class Q8LinearLora(torch.autograd.Function):
         # lora_a: [r, h]
         # lora_b: [d, r]
         # grad_output: [b, s, d]
-
-        w_fp8, w_scales = quantize_fp8((b * scale_b[:, None]).T)
+        if ctx.use_hadamard:
+            w_fp8, w_scales = quantize_fp8(hadamard_transform(((b * scale_b[:, None]).to(out_dtype))).T)
+        else:
+            w_fp8, w_scales = quantize_fp8((b * scale_b[:, None]).T)
+        
         if fuse_gelu:
-            grad_output = gelu_backward(grad_output, o, out_dtype)
+            grad_output = gelu_backward(o, grad_output, out_dtype)
+        
         grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
         grad_out_lora_b  = grad_output @ lora_b # [b, s, d] @ [d, r] -> [b, s, r]
         
         grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
-        grad_lora_a = grad_out_lora_b.T @ a # [b, r, s] @ [b, s, h] -> [b, r, h] : tflops = 2*b*r*h*s 
-        grad_lora_b = grad_output.T @ (a @ lora_a.T) # [b, d, s] @ ([b, s, h] @ [h, r]) => [b, d, s] @ [b, s, r] -> [b, d, r] : tflops = 2*b*s*h*r + 2*b*d*s*r
         
+        grad_lora_a = grad_out_lora_b.transpose(-1, -2) @ a # [b, r, s] @ [b, s, h] -> [b, r, h] : tflops = 2*b*r*h*s 
+        grad_lora_b = grad_output.transpose(-1, -2) @ (a @ lora_a.T) # [b, d, s] @ ([b, s, h] @ [h, r]) => [b, d, s] @ [b, s, r] -> [b, d, r] : tflops = 2*b*s*h*r + 2*b*d*s*r
         
-        return grad_x, None, None, None, None, grad_lora_a, grad_lora_b, None, None
+        return grad_x, None, None, None, None, grad_lora_a, grad_lora_b, None, None, None
 
 
 def q8_linear_lora(a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor]=None, 
                    scale_a: Optional[torch.Tensor]=None, scale_b:Optional[torch.Tensor]=None, 
                    lora_a: Optional[torch.Tensor]=None, lora_b: Optional[torch.Tensor]=None,
-                   fuse_gelu:bool=False, out_dtype: Optional[torch.dtype]=None) -> torch.Tensor:
-    return Q8LinearLora.apply(a, b, bias, scale_a, scale_b, lora_a, lora_b, fuse_gelu, out_dtype)
+                   fuse_gelu:bool=False, use_hadamard:bool=True, out_dtype: Optional[torch.dtype]=None) -> torch.Tensor:
+    return Q8LinearLora.apply(a, b, bias, scale_a, scale_b, lora_a, lora_b, fuse_gelu, use_hadamard, out_dtype)
 
-def q8_linear(a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor]=None, scale_a: Optional[torch.Tensor]=None, scale_b:Optional[torch.Tensor]=None, fuse_gelu:bool=False, out_dtype: Optional[torch.dtype]=None) -> torch.Tensor:
+def q8_linear(a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor]=None, 
+              scale_a: Optional[torch.Tensor]=None, scale_b:Optional[torch.Tensor]=None, 
+              fuse_gelu:bool=False, out_dtype: Optional[torch.dtype]=None) -> torch.Tensor:
     return Q8LinearFunc.apply(a, b, bias, scale_a, scale_b, fuse_gelu, out_dtype)
 
 
