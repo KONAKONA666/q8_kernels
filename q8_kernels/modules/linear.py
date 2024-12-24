@@ -98,9 +98,10 @@ class Q8LinearLora(nn.Module):
 
 
 class FP8Linear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, use_hadamard: bool = False, device=None):
         super().__init__()
         self.weight = nn.Parameter(torch.empty(out_features, in_features, device=device, dtype=torch.float8_e4m3fn), requires_grad=False)
+        self.use_hadamard = use_hadamard
         if bias:
             self.bias = nn.Parameter(torch.empty(out_features, device=device, dtype=torch.float), requires_grad=False)
         else:
@@ -108,17 +109,19 @@ class FP8Linear(nn.Module):
 
         self.register_buffer("scales", torch.empty(out_features, device=device, dtype=torch.float))
 
-    def forward(self, x, x_scales=None):
+    def forward(self, x):
         return Q8F.linear.fp8_linear(x, self.weight.data, self.bias.data if self.bias is not None else None, 
-                                     x_scales, self.scales, 
+                                     None, self.scales, 
+                                     self.use_hadamard,
                                      x.dtype)
 
     @classmethod
-    def from_linear(cls, linear: nn.Linear, force_cuda=True):
+    def from_linear(cls, linear: nn.Linear, force_cuda=True, use_hadamard=False):
         assert linear.weight.data.is_cuda or force_cuda, "input linear layer must be in cuda device"
         assert is_16bit(linear.weight.data)
-        layer = cls(linear.in_features, linear.out_features, linear.bias is not None, linear.weight.device)
-        w_quant, w_scale = Q8F.quantizer.quantize_fp8(linear.weight.data.cuda() if force_cuda else linear.weight.data)
+        layer = cls(linear.in_features, linear.out_features, linear.bias is not None, use_hadamard, linear.weight.device)
+        quant_fn = lambda x: Q8F.quantizer.quantize_fp8(Q8F.fast_hadamard.hadamard_transform(x)) if use_hadamard else Q8F.quantizer.quantize_fp8(x)
+        w_quant, w_scale = quant_fn(linear.weight.data.cuda() if force_cuda else linear.weight.data)
         layer.weight.data = w_quant
         layer.scales.data = w_scale
         if linear.bias is not None:

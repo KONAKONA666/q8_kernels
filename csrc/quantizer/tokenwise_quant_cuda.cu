@@ -165,9 +165,21 @@ void quantizer_launch(QuantizerParamsBase &params, cudaStream_t stream) {
 template<typename input_t, typename output_t>
 void  quantizer_cuda(QuantizerParamsBase &params, cudaStream_t stream) {
     if (params.dim == 2048) {
-        quantizer_launch<128, 2048, input_t, output_t>(params, stream);
+        static constexpr int ThreadElems = 16;
+        static constexpr int kNThreads = 2048/ThreadElems;
+        quantizer_launch<kNThreads, 2048, input_t, output_t>(params, stream);
     } else if(params.dim == 8192){
-        quantizer_launch<512, 8192, input_t, output_t>(params, stream);  
+        static constexpr int ThreadElems = 16;
+        static constexpr int kNThreads = 8192/ThreadElems;
+        quantizer_launch<kNThreads, 8192, input_t, output_t>(params, stream);  
+    } else if (params.dim == 4096){
+        static constexpr int ThreadElems = 16;
+        static constexpr int kNThreads = 4096/ThreadElems;
+        quantizer_launch<kNThreads, 4096, input_t, output_t>(params, stream);  
+    } else if (params.dim == 10240){
+        static constexpr int ThreadElems = 16;
+        static constexpr int kNThreads = 10240/ThreadElems;
+        quantizer_launch<kNThreads, 10240, input_t, output_t>(params, stream);  
     }
 }
 
