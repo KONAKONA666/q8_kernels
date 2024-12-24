@@ -135,6 +135,7 @@ class FP8LinearFunc(torch.autograd.Function):
         w = (b.to(ctx.out_dtype) * scale_b[:, None]).T
         w_fp8, w_scales = quantize_fp8(w)
         grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, ctx.out_dtype)
+        # TODO: add backward for W or ...
         return grad_x, None, None, None, None, None
 
 
