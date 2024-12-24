@@ -120,7 +120,6 @@ class FP8LinearFunc(torch.autograd.Function):
         assert bias is None or bias.dtype == torch.float, "FP8LinearFunc: bias must be in fp32"
         assert is_16bit(out_dtype), "FP8LinearFunc: out_dtype must be in 16bit, FIXME: LATER MAYBE"
         quant_fn = lambda x: quantize_fp8(hadamard_transform(x)) if use_hadamard else quantize_fp8(x)
-        is_nan_before = torch.isnan(a).any()
         if is_16bit(a):
             a, scale_a = quant_fn(a)
         if is_16bit(b):
@@ -133,8 +132,6 @@ class FP8LinearFunc(torch.autograd.Function):
         ctx.use_hadamard = use_hadamard
         
         o = mm_func(*mm_args)
-        is_nan_o = torch.isnan(o).any()
-        print(f"is_nan_before: {is_nan_before}, is_nan_o: {is_nan_o}")
         return o
     
     @staticmethod
