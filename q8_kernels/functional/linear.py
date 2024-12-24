@@ -65,6 +65,7 @@ class Q8LinearLora(torch.autograd.Function):
         # r is small so another mma.sync at the endis not a big deal
         mm_func = q8_mm_bias if bias is not None else q8_mm
         mm_args = (a_quant, b, bias, scale_a, scale_b, False, out_dtype) if bias is not None else (a_quant, b, scale_a, scale_b, False, out_dtype)
+        
         lora_y = torch.nn.functional.linear(torch.nn.functional.linear(a, lora_a), lora_b)
         o = mm_func(*mm_args) + lora_y
         
@@ -97,7 +98,6 @@ class Q8LinearLora(torch.autograd.Function):
         
         grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
         grad_out_lora_b  = grad_output @ lora_b # [b, s, d] @ [d, r] -> [b, s, r]
-        
         grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
         
         grad_lora_a = grad_out_lora_b.transpose(-1, -2) @ a # [b, r, s] @ [b, s, h] -> [b, r, h] : tflops = 2*b*r*h*s 
