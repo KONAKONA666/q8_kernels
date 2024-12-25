@@ -45,7 +45,7 @@ class Attention(nn.Module):
     
     def forward(self, hidden_states, 
                 freqs_cis=None, encoder_hidden_states=None, attention_mask=None, 
-                non_mm_precision=torch.bfloat16, mm_out_dtype=None, apply_qk_hadamard=True, attn_type='q8_kernels'):
+                non_mm_precision=torch.bfloat16, mm_out_dtype=None, apply_qk_hadamard=True, attn_type='torch'):
         
         if attention_mask is not None and attention_mask.ndim > 1 and attn_type == 'q8_kernels':
             attention_mask = attention_mask.argmin(-1).squeeze().int()
@@ -99,7 +99,6 @@ class Attention(nn.Module):
                                                                             dropout_p=0.0, is_causal=False)
         else:
             raise ValueError(f"Invalid attention type: {attn_type}")
-        
         hidden_states = hidden_states.transpose(1, 2).reshape(
             batch_size, -1, self.num_heads * self.head_dim
         ).contiguous()
