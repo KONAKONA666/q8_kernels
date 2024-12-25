@@ -138,7 +138,7 @@ class FP8LinearFunc(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # TODO: dW, dBias
         b, scale_b = ctx.saved_tensors
-        
+        # is_nan_before = grad_output.isnan().any()
         quant_fn_w = lambda x: quantize_fp8(hadamard_transform(x).T) if ctx.use_hadamard else quantize_fp8(x)
         
         grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
@@ -146,7 +146,12 @@ class FP8LinearFunc(torch.autograd.Function):
         w_fp8, w_scales = quant_fn_w(w)
         grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, ctx.out_dtype)
         # TODO: add backward for W or ...
-        return grad_x, None, None, None, None, None
+        # is_nan_after = grad_x.isnan().any()
+        # print(f"is_nan_before: {is_nan_before}, is_nan_after: {is_nan_after}")
+        # if is_nan_after.item() and not is_nan_before.item():
+        #     # print shape grad_out
+        #     print(f"grad_output shape: {grad_output.shape}")
+        return grad_x, None, None, None, None, None, None, None, None
 
 
 def fp8_linear(a: torch.Tensor, b: torch.Tensor, bias: Optional[torch.Tensor]=None, 
