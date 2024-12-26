@@ -167,3 +167,7 @@ debug/
 logs.txt
 test_*.py
 attn_test.py
+*.pt
+*.pth
+*.ipynb
+notebooks/
