@@ -5,6 +5,8 @@ import torch.nn as nn
 
 from q8_kernels_cuda.ops._C import rope, rope_backward
 
+from einops import rearrange
+
 class ROPE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x: torch.Tensor, cos_freqs: torch.Tensor, sin_freqs: torch.Tensor, out_type: Optional[torch.dtype]) -> torch.Tensor:
@@ -21,4 +23,22 @@ class ROPE(torch.autograd.Function):
         return rope_backward(grad_output, cos_freqs, sin_freqs, out_type), None, None, None
 
 def apply_rope(x: torch.Tensor, cos_freqs: torch.Tensor, sin_freqs: torch.Tensor, out_type: Optional[torch.dtype]=None) -> torch.Tensor:
-    return ROPE.apply(x, cos_freqs, sin_freqs, out_type)
+    
+    def apply_rotary_emb(
+        input_tensor: torch.Tensor,
+        freqs_cis: Tuple[torch.FloatTensor, torch.FloatTensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        cos_freqs = freqs_cis[0]
+        sin_freqs = freqs_cis[1]
+
+        t_dup = rearrange(input_tensor, "... (d r) -> ... d r", r=2)
+        t1, t2 = t_dup.unbind(dim=-1)
+        t_dup = torch.stack((-t2, t1), dim=-1)
+        input_tensor_rot = rearrange(t_dup, "... d r -> ... (d r)")
+
+        out = input_tensor * cos_freqs + input_tensor_rot * sin_freqs
+
+        return out
+    
+    return apply_rotary_emb(x, (cos_freqs, sin_freqs))
+    # return ROPE.apply(x, cos_freqs, sin_freqs, out_type)

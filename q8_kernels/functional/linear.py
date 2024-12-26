@@ -32,10 +32,25 @@ class Q8LinearFunc(torch.autograd.Function):
         if b.dtype == torch.float8_e4m3fn or is_16bit(b):
             b, scale_b = quantize(hadamard_transform(b))
         
+        ctx.save_for_backward(b, scale_b)
+        ctx.fuse_gelu = fuse_gelu
+        ctx.out_dtype = out_dtype   
+        
         if bias is not None:
             return q8_mm_bias(a, b, bias, scale_a, scale_b, fuse_gelu, out_dtype)
         else:
             return q8_mm(a, b, scale_a, scale_b, fuse_gelu, out_dtype)
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        b, scale_b = ctx.saved_tensors
+        fuse_gelu = ctx.fuse_gelu
+        out_dtype = ctx.out_dtype
+        
+        grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
+        w_fp8, w_scales = quantize_fp8((b.to(ctx.out_dtype) * scale_b[:, None]).T)
+        grad_x = hadamard_transform(fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, ctx.out_dtype))
+        return grad_x, None, None, None, None, None, None, None, None, None
 
 
 class Q8LinearLora(torch.autograd.Function):
@@ -90,18 +105,27 @@ class Q8LinearLora(torch.autograd.Function):
         # lora_a: [r, h]
         # lora_b: [d, r]
         # grad_output: [b, s, d]
-        if ctx.use_hadamard:
-            w_fp8, w_scales = quantize_fp8(hadamard_transform(((b * scale_b[:, None]).to(out_dtype))).T)
-        else:
-            w_fp8, w_scales = quantize_fp8((b * scale_b[:, None]).T)
         
+        # w = (b * scale_b[:, None]).to(out_dtype)
+        
+        # print(w.shape)
         if fuse_gelu:
             grad_output = gelu_backward(o, grad_output, out_dtype)
         
-        grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
         grad_out_lora_b  = grad_output @ lora_b # [b, s, d] @ [d, r] -> [b, s, r]
-        
-        grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
+        #TODO: ЩЕЩЕН АМЫН СІГЕЙН НОРМ НАХУЙ
+        if ctx.use_hadamard:
+            w = hadamard_transform((b * scale_b[:, None]).to(out_dtype)).T
+            w_fp8, w_scales = quantize_fp8(w)
+            grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
+
+            # grad_x = grad_output @ w + grad_out_lora_b @ lora_a
+            grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
+        else:
+            w = (b * scale_b[:, None]).to(out_dtype).T
+            w_fp8, w_scales = quantize_fp8(w)
+            # grad_x = grad_output @ w + grad_out_lora_b @ lora_a
+            grad_x =  fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
         
         grad_lora_a = grad_out_lora_b.transpose(-1, -2) @ a # [b, r, s] @ [b, s, h] -> [b, r, h] : tflops = 2*b*r*h*s 
         grad_lora_b = grad_output.transpose(-1, -2) @ (a @ lora_a.T) # [b, d, s] @ ([b, s, h] @ [h, r]) => [b, d, s] @ [b, s, r] -> [b, d, r] : tflops = 2*b*s*h*r + 2*b*d*s*r

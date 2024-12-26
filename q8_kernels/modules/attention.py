@@ -11,7 +11,6 @@ from .linear import Q8Linear
 def is_16bit(x) -> bool:
     return x.dtype == torch.float16 or x.dtype == torch.bfloat16
 
-
 class Attention(nn.Module):
     def __init__(self, 
                  query_dim: int, num_heads: int, head_dim: int, 
