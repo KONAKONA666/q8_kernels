@@ -66,6 +66,36 @@ inline __device__ void store_output(output_t *out, float out_vals[NElems]) {
 }
 
 
+template<typename T>
+struct SumOp {
+__device__ inline T operator()(T const & x, T const & y) { return x + y; }
+};
+
+template <>
+struct SumOp<float> {
+__device__ inline float operator()(float const &x, float const &y) { return x + y; }
+};
+
+template<int THREADS>
+struct Allreduce {
+    static_assert(THREADS == 32 || THREADS == 16 || THREADS == 8 || THREADS == 4);
+    template<typename T, typename Operator>
+    static __device__ inline T run(T x, Operator &op) {
+        constexpr int OFFSET = THREADS / 2;
+        x = op(x, __shfl_xor_sync(uint32_t(-1), x, OFFSET));
+        return Allreduce<OFFSET>::run(x, op);
+    }
+};
+
+template<>
+struct Allreduce<2> {
+template<typename T, typename Operator>
+static __device__ inline T run(T x, Operator &op) {
+        x = op(x, __shfl_xor_sync(uint32_t(-1), x, 1));
+        return x;
+    }
+};
+
 
 template<typename Ktraits>
 __global__ __launch_bounds__(Ktraits::kNThreads)
@@ -81,7 +111,8 @@ void rms_norm_backward_kernel(RMSNormsBackwardParamsBase params) {
     using vec_t = typename Ktraits::vec_t;
     using output_t = typename Ktraits::output_t;
 
-
+    __shared__ float smem_[kNWarps];
+    
     const int batch_id = blockIdx.x;
   
     input_t *x_normed = reinterpret_cast<input_t *>(params.x_normed_ptr) + batch_id * params.x_normed_batch_stride;
@@ -94,25 +125,83 @@ void rms_norm_backward_kernel(RMSNormsBackwardParamsBase params) {
     float x_vals[ThreadElems];
     float grad_out_vals[ThreadElems];   
     float weights_vals[ThreadElems];
-
+    float out_vals[ThreadElems];
+    // float dOidxj[ThreadElems];
+    // float dOidxi[ThreadElems];
+    
     load_input<ThreadElems, input_t, vec_t>(x_normed, x_vals);
     load_input<ThreadElems, output_t, vec_t>(grad_out, grad_out_vals);
     if constexpr (norm_affine){
         load_input<ThreadElems, weights_t, vec_t>(weights, weights_vals);
-    }
-    float row_norm = x_norms[0];
-    float coef = 1.0f / (2.0f * params.dim);
-    #pragma unroll
-    for (size_t i = 0; i < ThreadElems; i++)
-    {
-        if constexpr (norm_affine){
-            x_vals[i] = grad_out_vals[i] * (weights_vals[i]*row_norm - x_vals[i]*row_norm*coef*row_norm); 
-        } else {
-            x_vals[i] = grad_out_vals[i] * (row_norm - x_vals[i]*row_norm*coef*row_norm);
+    } else {
+        for (size_t i = 0; i < ThreadElems; i++){
+            weights_vals[i] = 1.0f;
         }
     }
+    float row_norm = x_norms[0];
 
-    store_output<ThreadElems, vec_t, output_t>(out, x_vals);
+    float row_sum_grad_out = 0.0f;
+    for (size_t i = 0; i < ThreadElems; i++){
+        row_sum_grad_out += grad_out_vals[i] * x_vals[i];
+    }
+    SumOp<float> sum_op;
+    row_sum_grad_out = Allreduce<32>::run(row_sum_grad_out, sum_op);
+    int warp_id = threadIdx.x / 32;
+    if(threadIdx.x % 32 == 0){
+        smem_[warp_id] = row_sum_grad_out;
+    }
+    __syncthreads();
+    row_sum_grad_out = 0.0f;
+    for (size_t i = 0; i < kNWarps; i++){
+        row_sum_grad_out += smem_[i];
+    }
+    __syncthreads();
+
+    for (size_t i = 0; i < ThreadElems; i++){
+        out_vals[i] = row_norm/params.dim * (params.dim*grad_out_vals[i]*weights_vals[i] - x_vals[i]/weights_vals[i]*row_sum_grad_out);
+    }
+
+    // for (size_t i = 0; i < ThreadElems; i++)
+    // {
+    //     if constexpr (norm_affine){
+    //         dOidxi[i] = grad_out_vals[i] * (weights_vals[i]*row_norm - x_vals[i]*row_norm*row_norm*(0.5f/params.dim));
+    //     } else {
+    //         dOidxi[i] = grad_out_vals[i] * (row_norm - x_vals[i]*row_norm*row_norm*(0.5f/params.dim));
+    //     }
+    // }
+    
+    // float dOidxj_sum = 0.0f;
+    // for (size_t i = 0; i < ThreadElems; i++)
+    // {
+    //     dOidxj[i] = grad_out_vals[i] * (-x_vals[i]*row_norm*row_norm*(0.5f/params.dim));
+    //     dOidxj_sum += dOidxj[i];
+    // }
+    // SumOp<float> sum_op;
+    // dOidxj_sum = Allreduce<32>::run(dOidxj_sum, sum_op);
+    // int warp_id = threadIdx.x / 32;
+    // if(threadIdx.x % 32 == 0){
+    //     smem_[warp_id] = dOidxj_sum;
+    // }
+
+    // __syncthreads();
+    
+    // dOidxj_sum = 0.0f;
+    // #pragma unroll  
+    // for (size_t i = 0; i < kNWarps; i++)
+    // {
+    //     dOidxj_sum = dOidxj_sum + smem_[i];
+    // }
+    // __syncthreads();
+    
+    // // for (size_t i = 0; i < ThreadElems; i++){
+    // //     dOidxj_sum -= dOidxj[i];
+    // // }
+
+    // for (size_t i = 0; i < ThreadElems; i++){
+    //     out_vals[i] = dOidxj_sum - dOidxj[i] + dOidxi[i];
+    // }
+
+    store_output<ThreadElems, vec_t, output_t>(out, out_vals);
 }
 
 
@@ -123,7 +212,7 @@ void rms_norm_backward_launch(RMSNormsBackwardParamsBase &params, cudaStream_t s
     dim3 grid(params.batch);
     auto kernel = &rms_norm_backward_kernel<Ktraits>;
     
-    size_t shared_mem = 0;
+    size_t shared_mem = kNThreads/32 * sizeof(float);
 
     kernel<<<grid, Ktraits::kNThreads, shared_mem, stream>>>(params);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
