@@ -113,7 +113,7 @@ class Q8LinearLora(torch.autograd.Function):
             grad_output = gelu_backward(o, grad_output, out_dtype)
         
         grad_out_lora_b  = grad_output @ lora_b # [b, s, d] @ [d, r] -> [b, s, r]
-        #TODO: ЩЕЩЕН АМЫН СІГЕЙН НОРМ НАХУЙ
+        #TODO: ЩЕЩЕН АМЫН СІГЕЙН НАХУЙ ПОХУЙ + ПОХУЙ
         if ctx.use_hadamard:
             w = hadamard_transform((b * scale_b[:, None]).to(out_dtype)).T
             w_fp8, w_scales = quantize_fp8(w)

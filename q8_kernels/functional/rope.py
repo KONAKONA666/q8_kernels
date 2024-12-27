@@ -23,7 +23,7 @@ class ROPE(torch.autograd.Function):
         return rope_backward(grad_output, cos_freqs, sin_freqs, out_type), None, None, None
 
 def apply_rope(x: torch.Tensor, cos_freqs: torch.Tensor, sin_freqs: torch.Tensor, out_type: Optional[torch.dtype]=None) -> torch.Tensor:
-    
+    #FIEXME: IDK WHY THIS IS NOT WORKING. LEFT FOR DEBUGGING PURPOSES
     def apply_rotary_emb(
         input_tensor: torch.Tensor,
         freqs_cis: Tuple[torch.FloatTensor, torch.FloatTensor],
