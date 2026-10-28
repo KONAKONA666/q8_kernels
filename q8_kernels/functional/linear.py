@@ -70,6 +70,10 @@ class Q8LinearLora(torch.autograd.Function):
         assert lora_a.shape[0] == lora_b.shape[-1], "Q8LinearFuncLora: lora_a and lora_b shape missmatch"
         assert out_dtype is not None and (out_dtype == torch.float16 or out_dtype == torch.bfloat16), "Q8LinearFuncLora: out_dtype must be None or float16 or bfloat16. float8 not tested, maybe it works"
 
+        # Keep already-quantized activations on the same code path.  The
+        # previous implementation only assigned ``a_quant`` for FP8/16-bit
+        # inputs, so an INT8 activation raised UnboundLocalError here.
+        a_quant = a
         if a.dtype == torch.float8_e4m3fn or is_16bit(a):
             a_quant, scale_a = quantize(hadamard_transform(a))
         if b.dtype == torch.float8_e4m3fn or is_16bit(b):
@@ -90,7 +94,9 @@ class Q8LinearLora(torch.autograd.Function):
             ctx.save_for_backward(o, a, b, scale_b, lora_a, lora_b)
             o = gelu_forward(o, out_dtype)
         else:
-            ctx.save_for_backward(None, a, b, scale_b, lora_a, lora_b)
+            # save_for_backward accepts tensors only.  There is no need to
+            # retain the pre-GELU output when the fused activation is off.
+            ctx.save_for_backward(a, b, scale_b, lora_a, lora_b)
         return o
 
         
@@ -99,7 +105,10 @@ class Q8LinearLora(torch.autograd.Function):
         fuse_gelu = ctx.fuse_gelu
         out_dtype = ctx.out_dtype
         saved_tensors = ctx.saved_tensors
-        o, a, b, scale_b, lora_a, lora_b = saved_tensors
+        if fuse_gelu:
+            o, a, b, scale_b, lora_a, lora_b = saved_tensors
+        else:
+            a, b, scale_b, lora_a, lora_b = saved_tensors
         # a: [b, s, h]
         # b: [h, d]
         # lora_a: [r, h]
@@ -111,13 +120,14 @@ class Q8LinearLora(torch.autograd.Function):
         # print(w.shape)
         if fuse_gelu:
             grad_output = gelu_backward(o, grad_output, out_dtype)
-        
+
+        # This is needed in both backward branches.  Previously the
+        # use_hadamard=False branch referenced these names before assignment.
+        grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
         grad_out_lora_b  = grad_output @ lora_b # [b, s, d] @ [d, r] -> [b, s, r]
-        #TODO: ЩЕЩЕН АМЫН СІГЕЙН НАХУЙ ПОХУЙ + ПОХУЙ
         if ctx.use_hadamard:
             w = hadamard_transform((b * scale_b[:, None]).to(out_dtype)).T
             w_fp8, w_scales = quantize_fp8(w)
-            grad_output_fp8, grad_output_scales = quantize_fp8(grad_output)
 
             # grad_x = grad_output @ w + grad_out_lora_b @ lora_a
             grad_x = fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
@@ -127,8 +137,15 @@ class Q8LinearLora(torch.autograd.Function):
             # grad_x = grad_output @ w + grad_out_lora_b @ lora_a
             grad_x =  fp8_mm(grad_output_fp8, w_fp8, grad_output_scales, w_scales, False, out_dtype) + grad_out_lora_b @ lora_a
         
-        grad_lora_a = grad_out_lora_b.transpose(-1, -2) @ a # [b, r, s] @ [b, s, h] -> [b, r, h] : tflops = 2*b*r*h*s 
-        grad_lora_b = grad_output.transpose(-1, -2) @ (a @ lora_a.T) # [b, d, s] @ ([b, s, h] @ [h, r]) => [b, d, s] @ [b, s, r] -> [b, d, r] : tflops = 2*b*s*h*r + 2*b*d*s*r
+        # Collapse all batch/sequence dimensions so parameter gradients keep
+        # the same shapes as lora_a [r, h] and lora_b [d, r].
+        flat_a = a.reshape(-1, a.shape[-1])
+        flat_grad_out_lora_b = grad_out_lora_b.reshape(-1, grad_out_lora_b.shape[-1])
+        grad_lora_a = flat_grad_out_lora_b.transpose(0, 1) @ flat_a
+
+        flat_grad_output = grad_output.reshape(-1, grad_output.shape[-1])
+        flat_lora_input = (a @ lora_a.T).reshape(-1, lora_a.shape[0])
+        grad_lora_b = flat_grad_output.transpose(0, 1) @ flat_lora_input
         
         return grad_x, None, None, None, None, grad_lora_a, grad_lora_b, None, None, None
 
